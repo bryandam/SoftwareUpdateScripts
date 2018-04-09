@@ -1,5 +1,5 @@
 # SoftwareUpdateScripts
-A collection of scripts related to Software Updates
+A collection of scripts related to managing software updates via System Center Configuration Manager.
 
 ### Invoke-DGASoftwareUpdateMaintenance.ps1
 Can be used to maintain WSUS, software udpates groups, ADRs, and deployment packages.  Can also be used to work around certain deficiencies in ADR selection.
