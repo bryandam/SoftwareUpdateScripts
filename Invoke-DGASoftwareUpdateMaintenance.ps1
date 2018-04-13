@@ -4,6 +4,9 @@ Maintain Software Updates in System Center Configuration Manager.
 .DESCRIPTION
 This script can be used to peform numerous software update maintenance tasks.  It can be used to decline updates based on supersedence, title, or external plugins.  By declining updates you remove them from the catalog that clients scan againt.  This reduces the amount of resources required by the server to generate the catalog and for the client to perform the scan.  In extreme cases this can be the difference between failure and success.  The script can also remove the declined updates and any expired updates from all Software Update Groups.  Lastly, the script can also remove any unneeded updates from the deployment package source folders.  It's recommended to first run the script with the -Whatif switch to determine the impact of running the script.
 .EXAMPLE
+Powershell -File .\Invoke-DGASoftwareUpdateMaintenance.ps1 -FirstRun -Force
+Call the WSUS databases's internal stored procedures to delete obsolte updates.  Use this to do the initial cleanup in environments that have never been maintained.
+.EXAMPLE
 Powershell -File .\Invoke-DGASoftwareUpdateMaintenance.ps1 -RunCleanUpWizard -Force
 Run WSUS cleanup wizard.  If the script has been ran in the last 24 hours force it to run anyways.
 .EXAMPLE
