@@ -58,6 +58,7 @@ Version 2.0: 04/09/18
     Added FirstRun parameter used to try and get past timeouts in environments that have not been maintained.  
     Fixed issues with CleanSources routine.
     Added/fixed pretty progress bars when running interactively.
+    Make ExclusionPeriod nullable so that null can be detected and zero can be passed properly.
 .LINK
 http://www.damgoodadmin.com
 #>
@@ -76,7 +77,7 @@ Param(
     [switch] $DeclineLastLevelOnly,
 	
     #Only decline superseded updates that haven't been modified for the given number of months.
-    [int] $ExclusionPeriod,
+    [System.Nullable[int]] $ExclusionPeriod,
 
     #Array of strings to search for and decline updates that match.  Use wildcard oprator (*) to match more than one update.
     [string[]] $DeclineByTitle,
@@ -781,10 +782,9 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
               $ExclusionPeriod = 0 
         } Else {
             $ExclusionPeriod = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age'}).Value
-        }
+        }    
     }
-    $ExclusionDate = (Get-Date).AddMonths($ExclusionPeriod * -1)
-    
+    $ExclusionDate = (Get-Date).AddMonths($ExclusionPeriod * -1)    
   
     #If using the built-in logic for declining superseded updates.
     If($DeclineSuperseded){
