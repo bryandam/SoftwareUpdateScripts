@@ -59,6 +59,8 @@ Version 2.0: 04/09/18
     Fixed issues with CleanSources routine.
     Added/fixed pretty progress bars when running interactively.
     Make ExclusionPeriod nullable so that null can be detected and zero can be passed properly.
+Version 2.1 ##/##/##
+    Fixed issue formatting the percent figure for progress bars.
 .LINK
 http://www.damgoodadmin.com
 #>
@@ -708,7 +710,7 @@ If($FirstRun){
     {
 
         #Track the progress all pretty-like.
-        $percentComplete = "{0:N2}" -f (($i/$ObsoleteUpdates.Rows.Count) * 100)
+        $percentComplete = [math]::Round((($i/$countAllUpdates) * 100))
 	    Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update $($ObsoleteUpdates.Rows[$i][0]) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
 
         Add-TextToCMLog $LogFile "Attempting to delete update $($ObsoleteUpdates.Rows[$i][0]) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
@@ -904,7 +906,7 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
 
             #Track progress.
             $i++    
-            $percentComplete = "{0:N2}" -f (($i/$countAllUpdates) * 100)
+            $percentComplete = [math]::Round((($i/$countAllUpdates) * 100))
 	    	Write-Progress -Activity "Processing Updates" -Status "Processing update #$i/$countAllUpdates - $($Update.Id.UpdateId)" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
     
             #If the update ID is in the declined update hash then decline it for the reason stated.
