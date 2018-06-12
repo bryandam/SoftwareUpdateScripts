@@ -59,8 +59,18 @@ Version 2.0: 04/09/18
     Fixed issues with CleanSources routine.
     Added/fixed pretty progress bars when running interactively.
     Make ExclusionPeriod nullable so that null can be detected and zero can be passed properly.
-Version 2.1 ##/##/##
+Version 2.2
     Fixed issue formatting the percent figure for progress bars.
+Version 2.3 ##/##/##
+    [TODO] Add additional SUSDB indexes.
+    [TODO] Make DeclineByTitle case insensitive
+    [TODO] Merge changes from Chad Simmons
+    [TODO] Have -WhatIf imply -Force
+    [TODO] Win7 and 8.1 IPU Updates
+    [TODO] Renamed Win10 Updates (Upgrades?)
+    [TODO] Win 10 Language plugin: get languages from WSUS.
+    [TODO] Exclusion list.
+    [TOD0] Delete declined updates using WSUS API (maybe based on declined age?)
 .LINK
 http://www.damgoodadmin.com
 #>
@@ -393,7 +403,7 @@ Function Get-SiteCode {
 ##########################################################################################################
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.0"
+$scriptVersion = "2.2"
 
 
 #If log file is null then set it to the default and then make the provider type explicit.
