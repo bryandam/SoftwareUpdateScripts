@@ -8,6 +8,7 @@ You must un-comment the $SupportedEditions variable and add the editions your or
 The KnownEditions variable holds a list of known editions to _try_ and prevent the script from going rogue if MS decides to change the naming scheme.  If ... or when ... they do this will need to be updated.
 Written By: Bryan Dam
 Version 1.0: 10/28/17
+Version 2.0: 06/29/18 Fixed issue with selecting multiple editions.
 #>
 #Un-comment and add elements to this array for editions you support.
 #Note: You must escape any parenthesis with the forward slash.  Ex.: "Office 365 Client Update - Monthly Channel \(Targeted\) Version"
@@ -63,7 +64,7 @@ Function Invoke-SelectUpdatesPlugin{
                             $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Office 365 Updates: Version")
                         }
                     #If a supported version was not found then decline it.
-                    } Else {
+                    } ElseIf (! $FoundSupportedVersion) {
                         $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Office 365 Updates: Edition")
                     }                                        
                 } #If a Known Edition                 
