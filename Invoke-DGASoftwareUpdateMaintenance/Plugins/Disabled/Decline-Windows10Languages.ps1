@@ -12,6 +12,8 @@ Written By: Bryan Dam
 Version 1.0: 10/25/17
 Version 2.0: 04/16/18
     Add support for running against a stand-alone WSUS server.
+Version 2.4: 07/20/18
+    Added support for Win 7 and 8.1 in place upgrade updates.
 #>
 
 
@@ -32,7 +34,7 @@ Function Invoke-SelectUpdatesPlugin{
     
 
     #Get the Windows 10 updates.
-    $Windows10Updates = ($Updates | Where{$_.ProductTitles -eq "Windows 10" -and !$_.IsDeclined })
+    $Windows10Updates = ($Updates | Where{(($_.ProductTitles -eq "Windows 10") -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*")) -and !$_.IsDeclined })
     
     #Loop through the updates and decline any that don't support the defined languages.
     ForEach ($Update in $Windows10Updates){
@@ -44,7 +46,7 @@ Function Invoke-SelectUpdatesPlugin{
         }
 
         #If none of the defined languages were found then decline the update.
-        If (! $LanguageFound){            
+        If (! $LanguageFound -and (! (Test-Exlusions $Update))){            
             $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Windows 10 Language: $($Update.GetSupportedUpdateLanguages())")
         }
     }
