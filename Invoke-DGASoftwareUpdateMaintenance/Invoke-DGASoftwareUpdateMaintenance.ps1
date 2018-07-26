@@ -70,7 +70,7 @@ Version 2.3  06/25/18
     Using WhatIf will force the script to run regardless of the 24-hour timeout.
     Make DeclineByTitle explicitly case-insensitive.
 Version 2.4 ##/##/##
-    In WhatIf mode don't check sync status when declining updates for performance reason.
+    In WhatIf mode don't check sync status when declining updates for performance reasons.
     In WhatIf mode don't write the last ran file.
     Added ExcludeByTitle, ExcludeByProduct, and IncludeByProduct options.
     Fixed some issues when running from the PowerShell ISE (Chad Simmons).
@@ -78,7 +78,7 @@ Version 2.4 ##/##/##
     Updated Windows 10 edition plugin to support the business and consumer in place upgrades.
     Included plugins to decline Itanium and 32-bit updates (Chad Simmons).
     Created plugin for Win7/8.1 in place upgrades updates.
-    [TODO] Support dynamic confif file.
+    Support dynamic config file.
     [TODO] Add additional SUSDB indexes.
     [TOD0] Delete declined updates using WSUS API (maybe based on declined age?)
     [TODO] Sync approvals throughout hierarchy.
@@ -93,87 +93,116 @@ http://www.damgoodadmin.com
 Param(
 	
     #Connect to the WSUS database directly and use the built in stored procedures to delete obsolete updates.
+    [Parameter(ParameterSetName='cmdline')]
     [switch] $FirstRun,
 
     #Decline superseded updates.
+    [Parameter(ParameterSetName='cmdline')]
     [switch] $DeclineSuperseded,
 
     #Only decline the last level of superseded updates which do not supersede any other updates.
+    [Parameter(ParameterSetName='cmdline')]
     [switch] $DeclineLastLevelOnly,
 	
     #Only decline superseded updates that haven't been modified for the given number of months.
+    [Parameter(ParameterSetName='cmdline')]
     [System.Nullable[int]] $ExclusionPeriod,
 
     #Array of strings to search for and decline updates that match.  Use wildcard operator (*) to match more than one update.
+    [Parameter(ParameterSetName='cmdline')]
     [string[]] $DeclineByTitle,
 
     #Run powershell scripts in the plugin folder to select updates to decline.
+    [Parameter(ParameterSetName='cmdline')]
     [switch] $DeclineByPlugins,
     
     #Array of title strings that will be exluded and not declined.  This exclusion will apply to all methods of selecting updates to decline.  Use wildcard operator (*) to match more than one update.
+    [Parameter(ParameterSetName='cmdline')]
     [string[]] $ExcludeByTitle,
 
     #Array of product strings that will be exluded and not declined.  This exclusion will apply to all methods of selecting updates to decline.  Use wildcard operator (*) to match more than one update.
+    [Parameter(ParameterSetName='cmdline')]
     [string[]] $ExcludeByProduct,
 
     #Array of product strings that will be included and declined.  This inclusion will apply to all methods of selecting updates to decline.  Use wildcard operator (*) to match more than one update.
+    [Parameter(ParameterSetName='cmdline')]
     [string[]] $IncludeByProduct,
 
     #Output the list of updates to this file.
+    [Parameter(ParameterSetName='cmdline')]
     [string] $UpdateListOutputFile,
     
     #Run the WSUS cleanup wizard.  This occurs after declining updates.
+    [Parameter(ParameterSetName='cmdline')]
     [switch] $RunCleanUpWizard,
 
     #Set the log file.
+    [Parameter(ParameterSetName='cmdline')]
     [string] $LogFile,
 
     #The maximum size of the log in bytes.
+    [Parameter(ParameterSetName='cmdline')]
     [int]$MaxLogSize = 2621440,
 
     #The number of minutes to wait after the last sync to run the wizard.
+    [Parameter(ParameterSetName='cmdline')]
     [int]$SyncLeadTime = 5,
 
     #Force the script to run even if it was run recently.
+    [Parameter(ParameterSetName='cmdline')]
     [switch]$Force,
 
     #After declining updates resync the update catalog to bring the changes into Configuration Manager.
+    [Parameter(ParameterSetName='cmdline')]
     [switch]$ReSyncUpdates,
 
     #When declining an update also remove it from all software update groups.
+    [Parameter(ParameterSetName='cmdline')]
     [switch]$CleanSUGs,
 
     #If a software update group is left empty, remove it.
+    [Parameter(ParameterSetName='cmdline')]
     [switch]$RemoveEmptySUGs,
 
     #Combine software updates groups into yearly groups leaving only the provided number of groups.
+    [Parameter(ParameterSetName='cmdline')]
     [Parameter( HelpMessage="A number greater than zero.")]
     [ValidateRange(1,[int]::MaxValue)]
     [int]$CombineSUGs,
 
     #A list of update title searches and the maximum runtime to set those updates to.
+    [Parameter(ParameterSetName='cmdline')]
     [Alias("MaxiumumUpateRuntime ")]
     $MaxUpdateRuntime,
 
     #Clean up any source files that are no longer associated to an active deployment.
+    [Parameter(ParameterSetName='cmdline')]
     [switch]$CleanSources,
 
     #Updates the distribution packages used by ADRs.
-    [Parameter( HelpMessage="You must select either Yearly or Monthly distribution packages for the automatic deployment rules.")]
+    [Parameter( ParameterSetName='cmdline',HelpMessage="You must select either Yearly or Monthly distribution packages for the automatic deployment rules.")]
     [ValidateSet("Yearly","Monthly")]
     [string]$UpdateADRDeploymentPackages,
 
     #Define the sitecode.
+    [Parameter(ParameterSetName='cmdline')]
     [string] $SiteCode,
 
     #Define a standalone WSUS server.
+    [Parameter(ParameterSetName='cmdline')]
     [string] $StandAloneWSUS,
 
     #Define the standalone WSUS server port.
+    [Parameter(ParameterSetName='cmdline')]
     [int] $StandAloneWSUSPort,
 
     #Define the standalone WSUS server's SSL setting.
-    [bool] $StandAloneWSUSSSL = $False
+    [Parameter(ParameterSetName='cmdline')]
+    [bool] $StandAloneWSUSSSL = $False,
+
+    #Define a configuration file.
+    [Parameter(ParameterSetName='configfile')]
+    [string] $ConfigFile
 )
 
 
@@ -610,10 +639,65 @@ $scriptVersion = "2.3"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 
+#If a configuration file was specified the read the parameters from the file.
+If ($ConfigFile){
+
+    #Resolve the path if it's relative.
+    Try{    
+        $ConfigFilePath = Resolve-Path ($ConfigFile) -ErrorAction Stop
+    }
+    Catch{
+        Write-Error "Could not resolve the the path to the configuration file '$ConfigFile'"
+        Exit
+    }
+    
+    $ConfigFile = "filesystem::$($ConfigFilePath)"
+
+    If (Test-path  $ConfigFile -PathType Leaf) {  
+
+        #Try loading the configuration file content.
+        Try{
+            $FileContent = Get-Content .\Config.ini
+        }
+        Catch {
+            Write-Error "The configuration file '$ConfigFile' cannot be read."
+            Exit
+        }
+
+        #Loop through each line splitting on the first equal sign.
+        ForEach ($Line in $FileContent){
+            $Data = $Line.Split("=",2)
+            $Data[0]=$Data[0].Trim()
+
+            #If there's no value then treat it like a switch.  Otherwise, process the value.
+            If($Data.Count -gt 1){
+                Try{
+                    New-Variable -Name $Data[0] -Value ( Invoke-Expression $Data[1]) -Force -WhatIf:$False
+                }
+                Catch{
+                    Write-Error "Could not parse the value for $($Data[0])."
+                    Exit
+                }
+        
+            }
+            Else {
+                New-Variable -Name $Data[0] -Value $True -Force -WhatIf:$False
+            }
+    
+            Write-Verbose "Parameter $((Get-Variable $Data[0]).Name) is set to $((Get-Variable $Data[0]).Value)"
+        }
+    }
+    Else{
+        Write-Error "The configuration file '$ConfigFile' cannot be found."
+        Exit
+    }
+}
+
 #If log file is null then set it to the default and then make the provider type explicit.
 If (!$LogFile) {
 		$LogFile = Join-Path $scriptPath "updatemaint.log"
 }
+
 $LogFile = "filesystem::$($LogFile)"
 
 #If out file was given then make the provider type explicit.
@@ -1322,7 +1406,7 @@ If ($ReSyncUpdates){
     #Try to initiate an update sync.
     Try 
     {
-        Sync-CMSoftwareUpdate -FullSync $True
+        If(!$WhatIfPreference){Sync-CMSoftwareUpdate -FullSync $True}
         Add-TextToCMLog $LogFile "Initiated a full software update sync and waiting one minute for it to start." $component 1
         If (!$WhatIfPreference) {Start-Sleep -Seconds 60}
         Invoke-CMSyncCheck
@@ -1552,7 +1636,7 @@ If ($CleanSources){
                 If (! $ContentSubFolders.Contains($Folder.Name) ){
                     Try{
                         $FolderPath = Join-Path $PackageSourcePath $Folder.Name
-                        Remove-Item $FolderPath -Recurse -Force -WhatIf:$WhatIfPreference
+                        If(!$WhatIfPreference){Remove-Item $FolderPath -Recurse -Force}
                         Add-TextToCMLog $LogFile "Removing folder '$($FolderPath)' from the deployment package $($UpdateDeploymentPackage.Name)." $component 1
                     }
 
