@@ -73,14 +73,16 @@ Version 2.4 ##/##/##
     In WhatIf mode don't check sync status when declining updates for performance reason.
     In WhatIf mode don't write the last ran file.
     Added ExcludeByTitle, ExcludeByProduct, and IncludeByProduct options.
-    Fixed some issues when running from the PowerShell ISE.
+    Fixed some issues when running from the PowerShell ISE (Chad Simmons).
     Updated Windows 10 plugins to support the Win7/8.1 in place upgrades updates.
     Updated Windows 10 edition plugin to support the business and consumer in place upgrades.
-    Included plugins by Chad Simmons to decline Itanium and 32-bit updates.
+    Included plugins to decline Itanium and 32-bit updates (Chad Simmons).
     Created plugin for Win7/8.1 in place upgrades updates.
+    [TODO] Support dynamic confif file.
     [TODO] Add additional SUSDB indexes.
-    [TODO] Renamed Win10 Updates (Upgrades?)
     [TOD0] Delete declined updates using WSUS API (maybe based on declined age?)
+    [TODO] Sync approvals throughout hierarchy.
+    [TODO] Orchestrate decline top-down and cleanup bottom-up throughout heirarchy.
 
 .LINK
 http://www.damgoodadmin.com
