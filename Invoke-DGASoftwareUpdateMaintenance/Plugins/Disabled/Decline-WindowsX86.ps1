@@ -13,12 +13,14 @@
 #   ========== Keywords ==========
 #   Keywords: WSUS SUP SCCM ConfigMgr Decline Expire Update Maintenance Superseded
 #   ========== Change Log History ==========
+#   - 2018/07/11 by Chad.Simmons@CatapultSystems.com - Added functionality for supported 32-bit operating systems so unsupported ones are declined
 #   - 2018/04/30 by Chad.Simmons@CatapultSystems.com - Created
 #   - 2018/04/30 by Chad@ChadsTech.net - Created
 #   === To Do / Proposed Changes ===
 #   - TODO: None
 ################################################################################
 
+$SupportedWinX86Versions = @('Windows Server 2003, Datacenter Edition','Windows Server 2003','Windows Server 2008','Windows XP','Windows 7','Windows 8','Windows 8.1','Windows 10')
 
 Function Invoke-SelectUpdatesPlugin{
     $DeclinedUpdates = @{}
@@ -28,10 +30,13 @@ Function Invoke-SelectUpdatesPlugin{
     #KB4099989-Windows10Rs3Client-RTM-ServicingStackUpdate-X86-TSL-World
     #KB947821-Win7-SP1-X86-TSL
     #WINDOWS6-1-KB975891-X86-294176
+    Add-TextToCMLog $LogFile "   Supported Windows X86 Products: $($SupportedWinX86Versions -join '; ')." $component 1
 
     #Loop through the updates and decline any that match the version.
-    ForEach ($Update in $WindowsX86Updates) {
-        $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Windows X86 (32-bit)")
+    ForEach ($update in $WindowsX86Updates) {
+        If (($update.ProductTitles | Select-String -pattern $SupportedWinX86Versions -SimpleMatch -List).Count -eq 0) {
+            $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Windows X86 (32-bit) Unsupported OS")
+        }
     }
     Return $DeclinedUpdates
 }
