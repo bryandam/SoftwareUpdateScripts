@@ -13,10 +13,11 @@ Version 2.4: 07/20/18
 #>
 
 #Un-comment and add elements to this array for editions you support.  Be sure to add a comma at the end in order to avoid confusion between editions.
-#$SupportedEditions = @("Feature update to Windows 10 Enterprise,","Feature update to Windows 10 (business editions),")
+#Note: You must escape any parenthesis with the forward slash.  Ex.: "Feature update to Windows 10 \(business editions\)"
+#$SupportedEditions = @("Feature update to Windows 10 Enterprise,","Feature update to Windows 10 \(business editions\),")
 
 #If Microsoft decides to change their naming scheme you will need to udpate this variable to support the new scheme.  Note that commas are used to prevent mismatches.
-$KnownEditions=@("Feature update to Windows 10 Pro,","Feature update to Windows 10 Pro N,","Feature update to Windows 10 Enterprise,","Feature update to Windows 10 Enterprise N,", "Feature update to Windows 10 Education,","Feature update to Windows 10 Education N,","Feature update to Windows 10 Team,","Feature update to Windows 10 (business editions),", "Feature update to Windows 10 (consumer editions),")
+$KnownEditions=@("Feature update to Windows 10 Pro,","Feature update to Windows 10 Pro N,","Feature update to Windows 10 Enterprise,","Feature update to Windows 10 Enterprise N,", "Feature update to Windows 10 Education,","Feature update to Windows 10 Education N,","Feature update to Windows 10 Team,","Feature update to Windows 10 \(business editions\),", "Feature update to Windows 10 \(consumer editions\),")
 Function Invoke-SelectUpdatesPlugin{
     
     $DeclinedUpdates = @{}

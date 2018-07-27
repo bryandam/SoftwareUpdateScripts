@@ -12,7 +12,7 @@ Version 2.0: 06/29/18 Fixed issue with selecting multiple editions.
 #>
 #Un-comment and add elements to this array for editions you support.
 #Note: You must escape any parenthesis with the forward slash.  Ex.: "Office 365 Client Update - Monthly Channel \(Targeted\) Version"
-#$SupportedEditions = @("Office 365 Client Update - Semi-annual Channel Version")
+#$SupportedEditions = @("Office 365 Client Update - Monthly Channel Version","Office 365 Client Update - Semi-annual Channel Version")
 
 #Set this to $True to decline all but the latest version of each editions or $False to ignore versions.
 $LatestVersionOnly=$False

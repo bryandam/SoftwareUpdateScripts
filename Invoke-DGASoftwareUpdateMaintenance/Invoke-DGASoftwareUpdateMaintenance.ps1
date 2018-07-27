@@ -78,7 +78,8 @@ Version 2.4 ##/##/##
     Updated Windows 10 edition plugin to support the business and consumer in place upgrades.
     Included plugins to decline Itanium and 32-bit updates (Chad Simmons).
     Created plugin for Win7/8.1 in place upgrades updates.
-    Support dynamic config file.
+    Support dynamic config file (see example).
+    Support relative and default paths for config and output files.
     [TODO] Add additional SUSDB indexes.
     [TOD0] Delete declined updates using WSUS API (maybe based on declined age?)
     [TODO] Sync approvals throughout hierarchy.
@@ -89,7 +90,7 @@ http://www.damgoodadmin.com
 #>
 
 
-[CmdletBinding(SupportsShouldProcess=$True)]
+[CmdletBinding(SupportsShouldProcess=$True,DefaultParameterSetName="configfile")]
 Param(
 	
     #Connect to the WSUS database directly and use the built in stored procedures to delete obsolete updates.
@@ -205,7 +206,7 @@ Param(
     [string] $ConfigFile
 )
 
-
+#region Functions
 Function Add-TextToCMLog {
 ##########################################################################################################
 <#
@@ -633,11 +634,20 @@ Function Test-Exlusions {
     Return $False
 }
 ##########################################################################################################
+#endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.3"
+$scriptVersion = "2.4"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
+
+#region Parameter validation
+
+#If using a configuration file.
+If ($PSCmdlet.ParameterSetName -eq 'configfile' -and [string]::IsNullOrEmpty($ConfigFile)){
+        $ConfigFile = Join-Path $scriptPath 'config.ini'
+        Write-Verbose "No parameters were found.  Using default configuration file"
+}
 
 #If a configuration file was specified the read the parameters from the file.
 If ($ConfigFile){
@@ -645,19 +655,19 @@ If ($ConfigFile){
     #Resolve the path if it's relative.
     Try{    
         $ConfigFilePath = Resolve-Path ($ConfigFile) -ErrorAction Stop
+        Write-Verbose "Configuration File: $ConfigFilePath"
+        $ConfigFile=$ConfigFilePath  
     }
     Catch{
         Write-Error "Could not resolve the the path to the configuration file '$ConfigFile'"
         Exit
     }
-    
-    $ConfigFile = "filesystem::$($ConfigFilePath)"
 
     If (Test-path  $ConfigFile -PathType Leaf) {  
 
         #Try loading the configuration file content.
         Try{
-            $FileContent = Get-Content .\Config.ini
+            $FileContent = Get-Content $ConfigFile
         }
         Catch {
             Write-Error "The configuration file '$ConfigFile' cannot be read."
@@ -665,22 +675,29 @@ If ($ConfigFile){
         }
 
         #Loop through each line splitting on the first equal sign.
-        ForEach ($Line in $FileContent){
+        ForEach ($Line in $FileContent){            
+            
+            #Skip lines that are empty, INI comments, or INI sections.
+            If ([string]::IsNullOrEmpty($Line) -or (@('[',';',' ') -contains $Line[0])){Continue}
+
+            #Split the line on the first equal sign and clean up the name.
             $Data = $Line.Split("=",2)
             $Data[0]=$Data[0].Trim()
 
             #If there's no value then treat it like a switch.  Otherwise, process the value.
-            If($Data.Count -gt 1){
+            If($Data.Count -eq 2){
+                $Data[1]=$Data[1].Trim()
+
+                #Try to evaluate the value as an expression otherwise use the value as-is.
                 Try{
                     New-Variable -Name $Data[0] -Value ( Invoke-Expression $Data[1]) -Force -WhatIf:$False
                 }
                 Catch{
-                    Write-Error "Could not parse the value for $($Data[0])."
-                    Exit
+                    New-Variable -Name $Data[0] -Value $Data[1] -Force -WhatIf:$False
                 }
         
             }
-            Else {
+            ElseIf ($Data.Count -eq 1) {
                 New-Variable -Name $Data[0] -Value $True -Force -WhatIf:$False
             }
     
@@ -690,18 +707,31 @@ If ($ConfigFile){
     Else{
         Write-Error "The configuration file '$ConfigFile' cannot be found."
         Exit
-    }
-}
+    } #Config file exists.
+} #If config file was passed.
 
 #If log file is null then set it to the default and then make the provider type explicit.
 If (!$LogFile) {
-		$LogFile = Join-Path $scriptPath "updatemaint.log"
+    $LogFile = Join-Path $scriptPath "updatemaint.log"
 }
 
 $LogFile = "filesystem::$($LogFile)"
 
-#If out file was given then make the provider type explicit.
-If ($UpdateListOutputFile){$UpdateListOutputFile = "filesystem::$($UpdateListOutputFile)"}
+#If output file was given then make sure everything looks good.
+If ($UpdateListOutputFile){
+
+    #If this was passed as a switch then use the default output file name.
+    If ($UpdateListOutputFile -is [Boolean]){
+        $UpdateListOutputFile = 'UpdateListOutputFile.csv'        
+    }
+
+    #If this was passed as a switch then use the default output file.
+    If (![System.IO.Path]::IsPathRooted($UpdateListOutputFile)){
+        $UpdateListOutputFile = Join-Path $scriptPath $UpdateListOutputFile
+    }
+    $UpdateListOutputFile = "filesystem::$($UpdateListOutputFile)"
+    Write-Verbose "Output File: $UpdateListOutputFile"
+}
 
 #If the log file exists and is larger then the maximum then roll it over.
 If (Test-path  $LogFile -PathType Leaf) {    
@@ -709,7 +739,6 @@ If (Test-path  $LogFile -PathType Leaf) {
         Move-Item -Force $LogFile ($LogFile -replace ".$","_") -WhatIf:$False
     }
 }
-
 Add-TextToCMLog $LogFile "$component started (Version $($scriptVersion))." $component 1
 
 #Check to see if this script has ran recently.
@@ -801,6 +830,7 @@ If ($MaxUpdateRuntime){
         Write-Host "You must pass either a string or a hashtable for the -Hash parameter."
     }
 }
+#endregion
 
 #Change the directory to the site location.
 $OriginalLocation = Get-Location
@@ -1816,6 +1846,7 @@ If ($UpdateADRDeploymentPackages){
 }
 
 Add-TextToCMLog $LogFile "$component finished." $component 1
+Add-TextToCMLog $LogFile "#############################################################################################" $component 1
 Set-Location $OriginalLocation
 Write-Output "The script completed successfully.  Review the log file for detailed results."
 

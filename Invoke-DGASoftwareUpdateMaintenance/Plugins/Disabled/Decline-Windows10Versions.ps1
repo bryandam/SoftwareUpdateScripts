@@ -12,7 +12,7 @@ Version 2.4: 07/20/18
 #>
 
 #Un-comment and add elements to this array for versions you no longer support.
-#$UnsupportedVersions = @("1511")
+#$UnsupportedVersions = @("1507","1511", "1607")
 Function Invoke-SelectUpdatesPlugin{
 
     $DeclinedUpdates = @{}
