@@ -76,9 +76,10 @@ Version 2.4 ##/##/##
     Fixed some issues when running from the PowerShell ISE (Chad Simmons).
     Updated Windows 10 plugins to support the Win7/8.1 in place upgrades updates.
     Updated Windows 10 edition plugin to support the business and consumer in place upgrades.
-    Included plugins to decline Itanium and 32-bit updates (Chad Simmons).
+    Created plugins to decline Itanium and 32-bit updates (Chad Simmons).
     Created plugin for Win7/8.1 in place upgrades updates.
     Support dynamic config file (see example).
+    Created plugin that declines 32-bit updates except for Windows Server 2008 (non-R2).
     Support relative and default paths for config and output files.
     [TODO] Add additional SUSDB indexes.
     [TOD0] Delete declined updates using WSUS API (maybe based on declined age?)
@@ -688,17 +689,18 @@ If ($ConfigFile){
             If($Data.Count -eq 2){
                 $Data[1]=$Data[1].Trim()
 
+
                 #Try to evaluate the value as an expression otherwise use the value as-is.
                 Try{
-                    New-Variable -Name $Data[0] -Value ( Invoke-Expression $Data[1]) -Force -WhatIf:$False
+                    Set-Variable -Name $Data[0] -Value ( Invoke-Expression $Data[1]) -Force -WhatIf:$False
                 }
                 Catch{
-                    New-Variable -Name $Data[0] -Value $Data[1] -Force -WhatIf:$False
+                    Set-Variable -Name $Data[0] -Value $Data[1] -Force -WhatIf:$False
                 }
         
             }
             ElseIf ($Data.Count -eq 1) {
-                New-Variable -Name $Data[0] -Value $True -Force -WhatIf:$False
+                Set-Variable -Name $Data[0] -Value $True -Force -WhatIf:$False
             }
     
             Write-Verbose "Parameter $((Get-Variable $Data[0]).Name) is set to $((Get-Variable $Data[0]).Value)"
