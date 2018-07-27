@@ -723,7 +723,7 @@ $LogFile = "filesystem::$($LogFile)"
 If ($UpdateListOutputFile){
 
     #If this was passed as a switch then use the default output file name.
-    If ($UpdateListOutputFile -is [Boolean]){
+    If (($UpdateListOutputFile -is [Boolean]) -or ($UpdateListOutputFile -eq 'True')){
         $UpdateListOutputFile = 'UpdateListOutputFile.csv'        
     }
 
