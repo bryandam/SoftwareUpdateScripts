@@ -81,7 +81,8 @@ Version 2.4 ##/##/##
     Support dynamic config file (see example).
     Created plugin that declines 32-bit updates except for Windows Server 2008 (non-R2).
     Support relative and default paths for config and output files.
-    [TODO] Add additional SUSDB indexes.
+    Added a new parameter called UseCustomIndexes which will create custom indexes that increase WSUS performance and helps fix Cleanup Wizard timeouts.
+    Added a new parameter called RemoveCustomIndexes which will remove the custom indexes.
     [TOD0] Delete declined updates using WSUS API (maybe based on declined age?)
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout heirarchy.
@@ -97,6 +98,14 @@ Param(
     #Connect to the WSUS database directly and use the built in stored procedures to delete obsolete updates.
     [Parameter(ParameterSetName='cmdline')]
     [switch] $FirstRun,
+
+    #Add custom indexes to the WSUS database.
+    [Parameter(ParameterSetName='cmdline')]
+    [switch] $UseCustomIndexes,
+
+    #Remove custom indexes to the WSUS database.
+    [Parameter(ParameterSetName='cmdline')]
+    [switch] $RemoveCustomIndexes,
 
     #Decline superseded updates.
     [Parameter(ParameterSetName='cmdline')]
@@ -635,12 +644,152 @@ Function Test-Exlusions {
     Return $False
 }
 ##########################################################################################################
+
+Function Get-WSUSDB{
+##########################################################################################################
+<#
+.SYNOPSIS
+   Get the WSUS database configuration.
+
+.DESCRIPTION
+   Use the WSUS api to get the database configuration and verify that you can successfully connect to the DB.
+
+#>
+##########################################################################################################
+
+    Param(
+        [Parameter(Mandatory=$true)]
+        [Microsoft.UpdateServices.Administration.IUpdateServer] $WSUSServer
+    )
+
+    Try{
+        $WSUSServerDB = $WSUSServer.GetDatabaseConfiguration()
+    }
+    Catch{
+        Add-TextToCMLog $LogFile "Failed to get the WSUS database details from the active SUP." $component 3
+        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
+        Return
+    }
+
+    If (!($WSUSServerDB)){
+        Add-TextToCMLog $LogFile "Failed to get the WSUS database details from the active SUP." $component 3
+        Return
+    }
+
+    #This is a just a test built into the API, it's not actually making the connection we'll use.     
+    Try{
+        $WSUSServerDB.ConnectToDatabase()
+        Add-TextToCMLog $LogFile "Successfully tested the connection to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 1
+    }
+    Catch{
+        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3
+        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
+        Return
+    }
+
+    Return $WSUSServerDB
+
+}
+
+Function Connect-WSUSDB{
+##########################################################################################################
+<#
+.SYNOPSIS
+   Connect to the WSUS database.
+
+.DESCRIPTION
+   Use the database configuration to connect to the DB.
+
+#>
+##########################################################################################################
+
+    Param(
+        [Parameter(Mandatory=$true)]
+        [Microsoft.UpdateServices.Administration.IDatabaseConfiguration] $WSUSServerDB
+    )
+
+    #Determine the connection string based on the type of DB being used.
+    If ($WSUSServerDB.IsUsingWindowsInternalDatabase){
+        #Using the Windows Internal Database.  Come one dawg ... just stop this insanity and migrate this to SQL.
+        If($WSUSServerDB.ServerName -eq "MICROSOFT##WID"){
+            $SqlConnectionString = "Data Source=\\.\pipe\MICROSOFT##WID\tsql\query;Integrated Security=True;Network Library=dbnmpntw"
+        }
+        Else{
+            $SqlConnectionString = "Data Source=\\.\pipe\microsoft##ssee\sql\query;Integrated Security=True;Network Library=dbnmpntw"
+        }        
+    }
+    Else{
+        #Connect to a real SQL database.
+        $SqlConnectionString = "Server=$($WSUSServerDB.ServerName);Database=$($WSUSServerDB.DatabaseName);Integrated Security=True"
+    }
+    
+    #Try to connect to the database.
+    Try{
+        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection($SqlConnectionString)
+	    $SqlConnection.Open()   
+        Add-TextToCMLog $LogFile "Successfully connected to the database." $component 1
+    }
+    Catch{
+        Add-TextToCMLog $LogFile "Failed to connect to the database using the connection string $($SqlConnectionString)." $component 3
+        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
+        Return
+    }
+
+    Return $SqlConnection
+}
+
+Function Invoke-SQLCMD{
+##########################################################################################################
+<#
+.SYNOPSIS
+   Run the SQL query passed and return the resulting data table.
+
+.DESCRIPTION
+   Run the SQL query passed and return the resulting data table.
+
+#>
+##########################################################################################################
+    [OutputType([System.Data.DataTable])]
+    Param(
+        [Parameter(Mandatory=$true)]
+        [System.Data.SqlClient.SqlConnection] $SqlConnection,
+        
+        [Parameter(Mandatory=$true)]
+        [string] $SqlCommand
+    )
+    
+    Try{
+        $SqlCmd = $SqlConnection.CreateCommand()
+        $SqlCmd.CommandTimeout = 1800 #30 minutes
+        $SqlCmd.CommandText = $SqlCommand 
+        $SqlDataAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($SqlCmd)        
+        [System.Data.DataTable] $DataTable = New-Object System.Data.DataTable
+        [void]$SqlDataAdapter.Fill($DataTable)
+        Return ,$DataTable #Force an array otherwise Powershell will return a DataRow instead of a DataTable if there's only one row.
+    }
+    Catch{
+        Add-TextToCMLog $LogFile "Failed to run the sql command: $SqlCommand." $component 3
+        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
+        Return        
+    }
+}
+
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
 $scriptVersion = "2.4"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
+$IndexArray = @{
+                'tbLocalizedProperty' = 'LocalizedPropertyID'
+                'tbLocalizedPropertyForRevision'='LocalizedPropertyID'
+                'tbRevision' = 'RowID, RevisionID'
+                'tbRevisionSupersedesUpdate' = 'SupersededUpdateID'
+                }
 
 #region Parameter validation
 
@@ -767,8 +916,8 @@ If (!($StandAloneWSUS) -and !(Get-Wmiobject -namespace "Root" -class "__Namespac
 }
 
 #Make sure at least one action parameter was given.
-If (!$FirstRun -and !$DeclineSuperseded -and !$DeclineByTitle -and !$DeclineByPlugins -and !$RunCleanUpWizard -and !$CleanSUGs -and !$CombineSUGs -and !$UpdateADRDeploymentPackages -and !$CleanSources -and !$MaxUpdateRuntime) {
-    Add-TextToCMLog $LogFile "You must choose one of the action parameters: FirstRun, DeclineSuperseded, DeclineByTitle, DeclineByPlugins, RunCleanupWizard, CleanSUGs, CombineSUGs, UpdateADRDeploymentPackages, CleanSources, or MaximumUpdateRuntime." $component 3
+If (!$UseCustomIndexes -and !$RemoveCustomIndexes -and !$FirstRun -and !$DeclineSuperseded -and !$DeclineByTitle -and !$DeclineByPlugins -and !$RunCleanUpWizard -and !$CleanSUGs -and !$CombineSUGs -and !$UpdateADRDeploymentPackages -and !$CleanSources -and !$MaxUpdateRuntime) {
+    Add-TextToCMLog $LogFile "You must choose one of the action parameters: UseCustomIndexes, RemoveCustomIndexes, FirstRun, DeclineSuperseded, DeclineByTitle, DeclineByPlugins, RunCleanupWizard, CleanSUGs, CombineSUGs, UpdateADRDeploymentPackages, CleanSources, or MaximumUpdateRuntime." $component 3
     Return
 }
 
@@ -998,113 +1147,183 @@ If ($WSUSServer -eq $null) {
  } 
 
 Add-TextToCMLog $LogFile "Connected to WSUS server $WSUSFQDN." $component 1
+
+#If the user has chosen to add custom indexes to the WSUS database.
+If ($UseCustomIndexes){
+
+    Add-TextToCMLog $LogFile "User selected AddIndex. Will try to verify indexes and create where necessary." $component 1
+            
+    $WSUSServerDB = Get-WSUSDB $WSUSServer
+
+    If(!$WSUSServerDB)
+    {
+        Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+    }
+    Else{
+
+        $SqlConnection = Connect-WSUSDB $WSUSServerDB
+        
+        If(!$SqlConnection)
+        {
+            Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 3
+        }
+        Else{
+
+            #Loop through the hashtable and create the indexes.
+            $FailedIndex = $False
+            ForEach ($TableName in $IndexArray.Keys){
+                        
+                #Determine if the index exists and create it if not.
+	            $Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+
+                #If the index doesn't exist then create it.
+                If($Index.Rows.Count -eq 0 ){
+                    Add-TextToCMLog $LogFile "The index IX_DGA_$TableName does not exist and will be created." $component 1
+
+                    If (!$WhatIfPreference){
+                    
+                        #Add the index.
+                        $Index = Invoke-SQLCMD $SqlConnection "CREATE NONCLUSTERED INDEX IX_DGA_$TableName ON $TableName($($IndexArray[$TableName]))"
+                    
+                        #Verify that the index exists now.
+                        $Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+                        If($Index.Rows.Count -eq 0 ){
+                            Add-TextToCMLog $LogFile "Failed to create the index IX_DGA_$TableName." $component 2
+                            $FailedIndex = $True
+                        }
+                        Else{
+                            Add-TextToCMLog $LogFile "Successfully created the index IX_DGA_$TableName." $component 1
+                        }
+                    }
+                }
+            } #ForEach IndexArray 
+
+            If ($FailedIndex){
+                Add-TextToCMLog $LogFile "Some indexes failed to create." $component 1
+            }
+            Else{
+                Add-TextToCMLog $LogFile "All indexes have been added or verified." $component 1
+            }
+
+            #Disconnect from the database.
+            $SqlConnection.Close()
+        } #Connect-WSUSDB
+    } #Get-WSUSDB
+
+}
+
+
+#If the user has chosen to remove custom indexes to the WSUS database.
+If ($RemoveCustomIndexes){
+
+    Add-TextToCMLog $LogFile "User selected RemoveCustomIndexes. Will try to remove the custom indexes." $component 1
+            
+    $WSUSServerDB = Get-WSUSDB $WSUSServer
+
+    If(!$WSUSServerDB)
+    {
+        Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+    }
+    Else{
+
+        $SqlConnection = Connect-WSUSDB $WSUSServerDB
+        
+        If(!$SqlConnection)
+        {
+            Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 3
+        }
+        Else{            
+
+            #Loop through the hashtable and remove the indexes.
+            $FailedIndex = $False
+            ForEach ($TableName in $IndexArray.Keys){           
+
+                #Determine if the index exists.
+	            $Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+
+                #If the index exists then remove it.
+                If($Index.Rows.Count -gt 0 ){
+                    Add-TextToCMLog $LogFile "The index IX_DGA_$TableName exists and will be removed." $component 1
+
+                    If (!$WhatIfPreference){
+                   
+                        #Remove the index.
+                        $Index = Invoke-SQLCMD $SqlConnection "DROP INDEX IX_DGA_$TableName ON $TableName"
+                    
+                        #Verify that the index no longer exists.
+                        $Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+                        If($Index.Rows.Count -gt 0 ){
+                            Add-TextToCMLog $LogFile "Failed to remove the index IX_DGA_$TableName." $component 2
+                            $FailedIndex = $True
+                        }
+                        Else{
+                            Add-TextToCMLog $LogFile "Successfully removed the index IX_DGA_$TableName." $component 1
+                        }
+                    }
+                }
+            } #ForEach IndexArray 
+
+            If ($FailedIndex){
+                Add-TextToCMLog $LogFile "Some indexes failed to remove." $component 1
+            }
+            Else{
+                Add-TextToCMLog $LogFile "All indexes have been removed." $component 1
+            }
+
+            #Disconnect from the database.
+            $SqlConnection.Close()
+        } #Connect-WSUSDB
+    } #Get-WSUSDB
+
+}
+
 #If the user has used the FirstRun parameter.
 If($FirstRun){
 
     Add-TextToCMLog $LogFile "User selected FirstRun. Will try to delete obsolete updates by directly calling the database store procedures." $component 1
-    
-    Try{
-        $WSUSServerDB = $WSUSServer.GetDatabaseConfiguration()
-    }
-    Catch{
-        Add-TextToCMLog $LogFile "Failed to get the WSUS database details from the active SUP." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
-        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
-        Break
-    }
 
-    If (!($WSUSServerDB)){
-        Add-TextToCMLog $LogFile "Failed to get the WSUS database details from the active SUP." $component 3
-        Break
-    }
+    If (!$UseCustomIndexes){Add-TextToCMLog $LogFile "You are have chosen not to use the UseCustomIndexes feature.  This can cause the update deletion process to be painfully slow and it is recommended that you use it." $component 2}
+            
+    $WSUSServerDB = Get-WSUSDB $WSUSServer
 
-    #This is a just a test built into the API, it's not actually making the connection we'll use.     
-    Try{
-        $WSUSServerDB.ConnectToDatabase()
-        Add-TextToCMLog $LogFile "Successfully tested the connection to to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 1
-    }
-    Catch{
-        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
-        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
-        Break
-    }    
-
-    #Determine the connection string based on the type of DB being used.
-    If ($WSUSServerDB.IsUsingWindowsInternalDatabase){
-        #Using the Windows Internal Database.  Come one dawg ... just stop this insanity and migrate this to SQL.
-        If($WSUSServerDB.ServerName -eq "MICROSOFT##WID"){
-            $SqlConnectionString = "Data Source=\\.\pipe\MICROSOFT##WID\tsql\query;Integrated Security=True;Network Library=dbnmpntw"
-        }
-        Else{
-            $SqlConnectionString = "Data Source=\\.\pipe\microsoft##ssee\sql\query;Integrated Security=True;Network Library=dbnmpntw"
-        }        
+    If(!$WSUSServerDB)
+    {
+        Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 1
     }
     Else{
-        #Connect to a real SQL database.
-        $SqlConnectionString = "Server=$($WSUSServerDB.ServerName);Database=$($WSUSServerDB.DatabaseName);Integrated Security=True"
-    }
-    
-    #Try to connect to the database.
-    Try{
-        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection($SqlConnectionString)
-	    $SqlConnection.Open()   
-        Add-TextToCMLog $LogFile "Successfully connected to to the database." $component 1
-    }
-    Catch{
-        Add-TextToCMLog $LogFile "Failed to connect to the database using the connection string $($SqlConnectionString)." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
-        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
-        Break
-    }
-    
-    #Get all the obsolete updates to remove.
-    Try{
-        $WSUSStoreProcedureName = "spGetObsoleteUpdatesToCleanup"     
-	    $SqlCmd = $SqlConnection.CreateCommand()
-        $SqlCmd.CommandTimeout = 1800 #30 minutes
-	    $SqlCmd.CommandText = "USE $($WSUSServerDB.DatabaseName);exec $($WSUSStoreProcedureName)" 
-	    $SqlDataAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($SqlCmd)        
-	    $ObsoleteUpdates = New-Object System.Data.DataTable
-	    [void]$SqlDataAdapter.Fill($ObsoleteUpdates)
-	
-        Add-TextToCMLog $LogFile "The WSUS $($WSUSStoreProcedureName) stored procedure returned $($ObsoleteUpdates.Rows.Count) updates." $component 1
-    }
-    Catch{
-        Add-TextToCMLog $LogFile "Failed to call the WSUS $($WSUSStoreProcedureName) stored procedure." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
-        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
-        Break
-    }
 
-    #Loop through each result and delete
-    If ($WhatIfPreference) {Add-TextToCMLog $LogFile "The WhatIf parameter was sent.  No obsolete updates will actually be deleted." $component 2}
-    For ($i=0; $i -lt $ObsoleteUpdates.Rows.Count; $i++)
-    {
-
-        #Track the progress all pretty-like.
-        $percentComplete = [math]::Round(($i/$ObsoleteUpdates.Rows.Count) * 100)
-	    Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update $($ObsoleteUpdates.Rows[$i][0]) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
-
-        Add-TextToCMLog $LogFile "Attempting to delete update $($ObsoleteUpdates.Rows[$i][0]) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
-        If (!($WhatIfPreference)){
-            Try{
-                $WSUSStoreProcedureName = "spDeleteUpdate"
-                $SqlCmd.CommandText = "$WSUSStoreProcedureName '$($ObsoleteUpdates.Rows[$i][0])'"
-	            $SqlDataAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($SqlCmd)
-	            $DeletedUpdate = New-Object System.Data.DataTable
-	            [void]$SqlDataAdapter.Fill($DeletedUpdate)
-            }
-            Catch{
-                Add-TextToCMLog $LogFile "Failed to delete update $($ObsoleteUpdates.Rows[$i][0]) using the $($WSUSStoreProcedureName) stored procedure." $component 3
-                Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
-                Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
-            }
+        $SqlConnection = Connect-WSUSDB $WSUSServerDB
+        
+        If(!$SqlConnection)
+        {
+            Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 1
         }
-    }
+        Else{
+            $ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "exec spGetObsoleteUpdatesToCleanup"            
+            Add-TextToCMLog $LogFile "Found $($ObsoleteUpdates.Rows.Count) obsolete updates to delete." $component 1
 
-    #Clear the progress bar
-    Write-Progress -Activity "Deleting Obsolete Updates" -Completed
+            #Loop through each result and delete
+            If ($WhatIfPreference) {Add-TextToCMLog $LogFile "The WhatIf parameter was sent.  No obsolete updates will actually be deleted." $component 2}
+            For ($i=0; $i -lt $ObsoleteUpdates.Rows.Count; $i++)
+            {
+
+                #Track the progress all pretty-like.
+                $percentComplete = [math]::Round(($i/$ObsoleteUpdates.Rows.Count) * 100)
+	            Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update $($ObsoleteUpdates.Rows[$i][0]) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
+
+                Add-TextToCMLog $LogFile "Attempting to delete update $($ObsoleteUpdates.Rows[$i][0]) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
+                If (!($WhatIfPreference)){
+                    Invoke-SQLCMD $SqlConnection "spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"
+                }
+            }
+
+            #Clear the progress bar
+            Write-Progress -Activity "Deleting Obsolete Updates" -Completed
+
+            #Disconnect from the database.
+            $SqlConnection.Close()
+        } #Connect-WSUSDB
+    } #Get-WSUSDB
 }
 
 #If the user has decided to decline updates.
