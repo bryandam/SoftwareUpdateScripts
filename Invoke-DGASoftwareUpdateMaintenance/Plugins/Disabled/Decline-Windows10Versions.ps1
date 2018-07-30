@@ -19,16 +19,16 @@ Function Invoke-SelectUpdatesPlugin{
     If (!$UnsupportedVersions){Return $DeclinedUpdates}
 
     $Windows10Updates = ($Updates | Where{(($_.ProductTitles -eq "Windows 10") -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*"))  -and !$_.IsDeclined })
-    
+
     #Loop through the updates and decline any that match the version.
     ForEach ($Update in $Windows10Updates){
 
         #If the title contains a version number.
-        If ($Update.Title -match "Version \d\d\d\d" -and (! (Test-Exlusions $Update))){
-            
+        If ($Update.Title -match "Version \d\d\d\d" -and (! (Test-Exclusions $Update))){
+
             #Capture the version number.
             $Version = $matches[0].Substring($matches[0].Length - 4)
-            
+
             #If the version number is in the list then decline it.
             If ($UnsupportedVersions.Contains($Version)){
                 $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Windows 10 Version: $($Version)")
