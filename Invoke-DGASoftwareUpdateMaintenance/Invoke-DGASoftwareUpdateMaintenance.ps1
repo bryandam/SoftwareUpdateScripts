@@ -81,9 +81,9 @@ Version 2.4 ##/##/##
     Support dynamic config file (see example).
     Created plugin that declines 32-bit updates except for Windows Server 2008 (non-R2).
     Support relative and default paths for config and output files.
-    Added a new parameter called UseCustomIndexes which will create custom indexes that increase WSUS performance and helps fix Cleanup Wizard timeouts.
+    Added a new parameter called UseCustomIndexes which will create custom indexes to the WSUS database that increases performance and helps fix Cleanup Wizard timeouts.
     Added a new parameter called RemoveCustomIndexes which will remove the custom indexes.
-    [TOD0] Delete declined updates using WSUS API (maybe based on declined age?)
+    Delete declined updates older than twice the Exclusion period using WSUS API.
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout heirarchy.
 
@@ -106,6 +106,10 @@ Param(
     #Remove custom indexes to the WSUS database.
     [Parameter(ParameterSetName='cmdline')]
     [switch] $RemoveCustomIndexes,
+
+    #Delete declined updates.
+    [Parameter(ParameterSetName='cmdline')]
+    [switch] $DeleteDeclined,
 
     #Decline superseded updates.
     [Parameter(ParameterSetName='cmdline')]
@@ -916,8 +920,8 @@ If (!($StandAloneWSUS) -and !(Get-Wmiobject -namespace "Root" -class "__Namespac
 }
 
 #Make sure at least one action parameter was given.
-If (!$UseCustomIndexes -and !$RemoveCustomIndexes -and !$FirstRun -and !$DeclineSuperseded -and !$DeclineByTitle -and !$DeclineByPlugins -and !$RunCleanUpWizard -and !$CleanSUGs -and !$CombineSUGs -and !$UpdateADRDeploymentPackages -and !$CleanSources -and !$MaxUpdateRuntime) {
-    Add-TextToCMLog $LogFile "You must choose one of the action parameters: UseCustomIndexes, RemoveCustomIndexes, FirstRun, DeclineSuperseded, DeclineByTitle, DeclineByPlugins, RunCleanupWizard, CleanSUGs, CombineSUGs, UpdateADRDeploymentPackages, CleanSources, or MaximumUpdateRuntime." $component 3
+If (!$UseCustomIndexes -and !$RemoveCustomIndexes -and !$FirstRun -and !$DeleteDeclined -and !$DeclineSuperseded -and !$DeclineByTitle -and !$DeclineByPlugins -and !$RunCleanUpWizard -and !$CleanSUGs -and !$CombineSUGs -and !$UpdateADRDeploymentPackages -and !$CleanSources -and !$MaxUpdateRuntime) {
+    Add-TextToCMLog $LogFile "You must choose one of the action parameters: UseCustomIndexes, RemoveCustomIndexes, FirstRun, DeleteDeclined, DeclineSuperseded, DeclineByTitle, DeclineByPlugins, RunCleanupWizard, CleanSUGs, CombineSUGs, UpdateADRDeploymentPackages, CleanSources, or MaximumUpdateRuntime." $component 3
     Return
 }
 
@@ -1212,7 +1216,6 @@ If ($UseCustomIndexes){
 
 }
 
-
 #If the user has chosen to remove custom indexes to the WSUS database.
 If ($RemoveCustomIndexes){
 
@@ -1327,8 +1330,10 @@ If($FirstRun){
 }
 
 #If the user has decided to decline updates.
-$DeclinedUpdates = @{} #Hash table to contain declined updates.
-If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
+$UpdatesToDecline = @{} #Hash table updates to decline.
+$UpdatesToDelete = @{} #Hash table updates to delete.
+
+If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
     
     #Check the sync status.
     If ($StandAloneWSUS){
@@ -1341,7 +1346,7 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
     #Get a collection of all updates.
     Add-TextToCMLog $LogFile "Retrieving all updates." $component 1
     Try {
-	    $Updates = $WSUSServer.GetUpdates()
+	    $AllUpdates = $WSUSServer.GetUpdates()
     } Catch {
 	    Add-TextToCMLog $LogFile "Failed to get updates." $component 3	    
         Add-TextToCMLog $LogFile "If this operation timed out, try running the script with only the FirstRun parameter." $component 3
@@ -1359,14 +1364,15 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
     Else{
         Invoke-CMSyncCheck
     }   
-
-    #Yea, that's right.  We got all the update data just so we could grab the total number.  Pure vanity, I know.
-    $countAllUpdates = $Updates.Count
-    $Updates = $Updates | Where-Object {$_.IsDeclined -eq $False}
+   
+    #Divide the updates list between declined or not.
+    #This isn't strictly necessary but helps prevents myself or the plugins from trying to re-decline an update.
+    $DeclinedUpdates = $AllUpdates | Where-Object {$_.IsDeclined -eq $True}
+    $ActiveUpdates = $AllUpdates | Where-Object {$_.IsDeclined -eq $False}
 
     #Initialize count variables.
-    $i = 0                   
-    $countDeclined = $countAllUpdates - $Updates.Count
+    $i = 0      
+    $countDeleted = 0             
     $countSuperseded = 0        
     $countNewlyDeclined = 0
     $countOther = 0    
@@ -1377,7 +1383,6 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
     $countDeclinedByPluginResults = @{}
     ForEach ($SearchString In $DeclineByTitle){$countDeclinedByTitleResults[$SearchString]=0}
 
-    #Now that we have the full update counts let's remove the updates that are already declined.
     
     
     #If no exclusion period was given then use the supersedence configuration of the SUP Component to calculate the exclusion date.
@@ -1385,7 +1390,7 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
 
         #If expiring immediately then use zero months otherwise use the number of months configured
         If ($StandAloneWSUS) {
-            $ExclusionPeriod = 0
+            $ExclusionPeriod = 3
         }
         ElseIf ((((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Mode'}).Value -eq 0){
             $ExclusionPeriod = 0 
@@ -1393,14 +1398,33 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
             $ExclusionPeriod = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age'}).Value
         }    
     }
-    $ExclusionDate = (Get-Date).AddMonths($ExclusionPeriod * -1)    
+    $ExclusionDate = (Get-Date).AddMonths($ExclusionPeriod * -1)  
+    
+    #If deleting declined updates  
+    If ($DeleteDeclined){
+        $ExclusionDateDelete = (Get-Date).AddMonths($ExclusionPeriod * -2)  
+
+        Add-TextToCMLog $LogFile "Deleting deleted updates created before $ExclusionDateDelete." $component 1
+
+        #Loop through updates and add those that match the user's criteria to the hash.
+        ForEach ($Update in $DeclinedUpdates) {  
+                
+            #Exclude superseded updates that do not meet the last level or exlusion period criteria.
+            If (($Update.CreationDate -lt $ExclusionDateDelete) -and (! (Test-Exlusions $Update)))  {   
+
+                #Add the update to the hash and count the number of superseded updates we decline.
+                $UpdatesToDelete.Set_Item($Update.Id.UpdateId,"Deleted")
+                $countDeleted++
+            }                      
+        } #ForEach DeclinedUpdates
+    } #Deletedeclined
   
     #If using the built-in logic for declining superseded updates.
     If($DeclineSuperseded){
         Add-TextToCMLog $LogFile "Declining superseded updates created before $ExclusionDate." $component 1
 
         #Loop through updates and add those that match the user's criteria to the hash.
-        ForEach ($Update in $Updates) {  
+        ForEach ($Update in $ActiveUpdates) {  
                     
             #If we're declining superseded updates, and this update is superseded, and it's not already declined.
             If ($DeclineSuperseded -and $Update.IsSuperseded) {
@@ -1411,7 +1435,7 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
                 If ((($DeclineLastLevelOnly -and !$Update.HasSupersededUpdates) -or !$DeclineLastLevelOnly) -and ($Update.CreationDate -lt $ExclusionDate) -and (! (Test-Exlusions $Update)))  {   
 
                     #Add the update to the hash and count the number of superseded updates we decline.
-                    $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Superseded")
+                    $UpdatesToDecline.Set_Item($Update.Id.UpdateId,"Superseded")
                     $countDeclinedSuperseded++
                 }
             }              
@@ -1424,7 +1448,7 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
         Add-TextToCMLog $LogFile "Declining updates by title." $component 1
 
         #Loop through updates and add those that match the user's criteria to the hash.
-        ForEach ($Update in $Updates) {  
+        ForEach ($Update in $ActiveUpdates) {  
         
             #Loop through each title search string in the array and decline matching updates.
             ForEach ($SearchString In $DeclineByTitle)
@@ -1433,7 +1457,7 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
                 If (($Update.Title -ilike $SearchString) -and (! (Test-Exlusions $Update)))
                 {
                     #Add the update to the hash, count it, and set the AlreadyDeclined variable so we don't try to add it again.
-                    $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"ByTitle: $SearchString")   
+                    $UpdatesToDecline.Set_Item($Update.Id.UpdateId,"ByTitle: $SearchString")   
                     $countDeclinedByTitleResults[$SearchString]++
                     $countDeclinedByTitle++                               
                 }
@@ -1491,13 +1515,13 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
                         } Else { 
 
                             #Remove duplicate items from the plugin hash.
-                            $duplicates = $DeclinedUpdates.keys | where {$pluginHash.ContainsKey($_)}
+                            $duplicates = $UpdatesToDecline.keys | where {$pluginHash.ContainsKey($_)}
                             ForEach ($item in $duplicates) {    
                                 $pluginHash.Remove($item)                  
                             }
 
                             #Join the hash tables.
-                            $DeclinedUpdates += $pluginHash                                                    
+                            $UpdatesToDecline += $pluginHash                                                    
 
                             #Count the declined updates by plugin.
                             $countDeclinedByPlugin += $pluginHash.Count
@@ -1519,26 +1543,26 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
     } #DeclineByPlugins parameter passed.
         
     #If updates were selected to be declined then decline them.
-    Add-TextToCMLog $LogFile "$($DeclinedUpdates.Count) updates were selected to be declined." $component 1
-    If ($DeclinedUpdates.Count -gt 0){
+    Add-TextToCMLog $LogFile "$($UpdatesToDecline.Count) updates were selected to be declined." $component 1
+    If($DeleteDeclined){Add-TextToCMLog $LogFile "$($UpdatesToDelete.Count) updates were selected to be deleted." $component 1}
+    If (($UpdatesToDecline.Count -gt 0) -or ($UpdatesToDelete.Count -gt 0)){
         If ($UpdateListOutputFile){"Update Id,Revision Number,Title,KB Articles,Security Bulletin,Has Superseded Updates,Creation Date,Declined Reason" | Out-File $UpdateListOutputFile -Force -Encoding Default -WhatIf:$False}
 
         #Loop through updates and decline those that have been selected.
-        ForEach ($Update in $Updates) {             
+        ForEach ($Update in $AllUpdates) {             
 
             #Track progress.
             $i++    
-            $percentComplete = [math]::Round((($i/($Updates.Count)) * 100))
-	    	Write-Progress -Activity "Processing Updates" -Status "Processing update $i/$($Updates.Count) - $($Update.Id.UpdateId)" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
+            $percentComplete = [math]::Round((($i/($AllUpdates.Count)) * 100))
+	    	Write-Progress -Activity "Processing Updates" -Status "Processing update $i/$($AllUpdates.Count) - $($Update.Id.UpdateId)" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
     
-            #If the update ID is in the declined update hash then decline it for the reason stated.
-            If ($DeclinedUpdates.ContainsKey($Update.Id.UpdateId)){
-                
-                #Try and decline the update.                			  				        			        
+            #If the update ID is in the decline or delete update hashes.
+            If ($UpdatesToDecline.ContainsKey($Update.Id.UpdateId) -or $UpdatesToDelete.ContainsKey($Update.Id.UpdateId)){
+                                			  				        			        
                 Try 
                 {
 
-                    #Only perform these actions if not in WhatIf mode.
+                    #For performance reasons don't check the sync status when in WhatIf mode.
                     If (!$WhatIfPreference){  
                                       
                         #Check the sync status.
@@ -1548,18 +1572,30 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
                         Else{
                             Invoke-CMSyncCheck
                         }
-
-                        #Decline the udpate.
-                        $Update.Decline()
+                    }
+                       
+                    #Decline the udpate.
+                    If ($UpdatesToDecline.ContainsKey($Update.Id.UpdateId)){
+                        If (!$WhatIfPreference){$Update.Decline()}
+                        $Action = 'Declined'
+                        $Source = $UpdatesToDecline.($Update.Id.UpdateId)
+                        $countNewlyDeclined++
+                    }
+                    #Delete the udpate.
+                    If ($UpdatesToDelete.ContainsKey($Update.Id.UpdateId)){
+                        If (!$WhatIfPreference){$WSUSServer.DeleteUpdate($Update.Id.UpdateId)}
+                        $Action = 'Deleted'
+                        $Source = $UpdatesToDelete.($Update.Id.UpdateId)
+                        $countNewlyDeleted++                            
                     }
 
-                    If ($UpdateListOutputFile){"$($Update.Id.UpdateId),$($Update.Id.RevisionNumber),""$($Update.Title)"",$($Update.KnowledgeBaseArticles),$($Update.SecurityBulletins),$($Update.HasSupersededUpdates),$($Update.CreationDate),$($DeclinedUpdates.($Update.Id.UpdateId))" | Out-File $UpdateListOutputFile -Append -Encoding Default -WhatIf:$False}
-                    Add-TextToCMLog $LogFile "Declined update '$($Update.Title)' (ID: $($Update.Id.UpdateId)). Source: $($DeclinedUpdates.($Update.Id.UpdateId))" $component 1
-                    $countNewlyDeclined++
+                    #Log what we've done.
+                    Add-TextToCMLog $LogFile "$Action update '$($Update.Title)' (ID: $($Update.Id.UpdateId)). Source: $Source" $component 1
+                    If ($UpdateListOutputFile){"$($Update.Id.UpdateId),$($Update.Id.RevisionNumber),""$($Update.Title)"",$($Update.KnowledgeBaseArticles),$($Update.SecurityBulletins),$($Update.HasSupersededUpdates),$($Update.CreationDate),$Source" | Out-File $UpdateListOutputFile -Append -Encoding Default -WhatIf:$False}                    
                 }
                 Catch [System.Exception]
                 {
-                    Add-TextToCMLog $LogFile "Failed to decline update '$($Update.Title)' (ID: $($Update.Id.UpdateId)). Source: $($DeclinedUpdates.($Update.Id.UpdateId)) Error: $($_.Exception.Message)." $component 3                    
+                    Add-TextToCMLog $LogFile "Failed to decline update '$($Update.Title)' (ID: $($Update.Id.UpdateId)). Source: $($UpdatesToDecline.($Update.Id.UpdateId)) Error: $($_.Exception.Message)." $component 3                    
                     Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }                
@@ -1577,8 +1613,9 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
     Add-TextToCMLog $LogFile "Summary:"  $component 1  
     Add-TextToCMLog $LogFile "========" $component 1
 
-    Add-TextToCMLog $LogFile "All Updates = $countAllUpdates" $component 1
-    Add-TextToCMLog $LogFile "All Updates Except Declined = $($countAllUpdates - $countDeclined)"   $component 1  
+    Add-TextToCMLog $LogFile "All Updates = $($AllUpdates.Count)" $component 1
+    Add-TextToCMLog $LogFile "All Declined Updates = $($DeclinedUpdates.Count)"   $component 1  
+    Add-TextToCMLog $LogFile "All Updates Except Declined = $($ActiveUpdates.Count)"   $component 1  
     If ($DeclineSuperseded) {Add-TextToCMLog $LogFile "All Superseded Updates = $countSuperseded" $component 1}
     If ($DeclineSuperseded) {Add-TextToCMLog $LogFile "Superseded Updates Declined = $countDeclinedSuperseded" $component 1}
     If ($DeclineByTitle) {
@@ -1597,8 +1634,10 @@ If ($DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
         Add-TextToCMLog $LogFile "Updates Declined by Plugin (Total Unique) = $countDeclinedByPlugin" $component 1
         
     }
-    Add-TextToCMLog $LogFile "Total Newly Declined Updates = $countNewlyDeclined"  $component 1   
-    Add-TextToCMLog $LogFile "Total Active Updates = $($countAllUpdates - $countDeclined - $countNewlyDeclined)"  $component 1    
+    Add-TextToCMLog $LogFile "Total Newly Declined Updates = $countNewlyDeclined"  $component 1
+    If($DeleteDeclined){Add-TextToCMLog $LogFile "Total Newly Deleted Updates = $countNewlyDeleted"  $component 1}
+    Add-TextToCMLog $LogFile "Total Active Updates = $($AllUpdates.Count - $DeclinedUpdates.Count - $countNewlyDeclined)"  $component 1 
+    Add-TextToCMLog $LogFile "Total Updates = $($AllUpdates.Count - $countNewlyDeleted)"  $component 1    
     Add-TextToCMLog $LogFile "========" $component 1
 } #If DeclineSuperseded, DeclineByTitle, or DeclineByPlugins
 
@@ -1691,7 +1730,7 @@ If ($CleanSUGs){
 
         #Loop through each update and remove those that have been declined or are expired.
         ForEach($Update in $SoftwareUpdateGroupUpdates){            
-            If ($Update.IsExpired -or ($DeclinedUpdates.ContainsKey($Update.CI_UniqueID))){
+            If ($Update.IsExpired -or ($UpdatesToDecline.ContainsKey($Update.CI_UniqueID))){
                 Add-TextToCMLog $LogFile "Removing $($Update.LocalizedDisplayName) from the $($SoftwareUpdateGroup.LocalizedDisplayName) software update group." $component 1
                 
                 Try {
