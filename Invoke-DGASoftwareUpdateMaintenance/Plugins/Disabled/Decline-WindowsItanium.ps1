@@ -8,8 +8,6 @@
 #.NOTES
 #   This script is invoked by Invoke-DGASoftwareUpdateMaintenance.ps1 and not run independently
 #
-#   This script is maintained at https://github.com/ChadSimmons/Scripts
-#   Additional information about the function or script.
 #   ========== Keywords ==========
 #   Keywords: WSUS SUP SCCM ConfigMgr Decline Expire Update Maintenance Superseded
 #   ========== Change Log History ==========

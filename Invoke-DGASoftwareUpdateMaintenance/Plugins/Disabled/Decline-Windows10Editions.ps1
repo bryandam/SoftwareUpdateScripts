@@ -19,13 +19,13 @@ Version 2.4: 07/20/18
 #If Microsoft decides to change their naming scheme you will need to udpate this variable to support the new scheme.  Note that commas are used to prevent mismatches.
 $KnownEditions=@("Feature update to Windows 10 Pro,","Feature update to Windows 10 Pro N,","Feature update to Windows 10 Enterprise,","Feature update to Windows 10 Enterprise N,", "Feature update to Windows 10 Education,","Feature update to Windows 10 Education N,","Feature update to Windows 10 Team,","Feature update to Windows 10 \(business editions\),", "Feature update to Windows 10 \(consumer editions\),")
 Function Invoke-SelectUpdatesPlugin{
-    
+
     $DeclinedUpdates = @{}
-    If (!$SupportedEditions){Return $DeclinedUpdates}    
+    If (!$SupportedEditions){Return $DeclinedUpdates}
 
 
     $Windows10Updates = ($Updates | Where{$_.ProductTitles -eq "Windows 10" -and !$_.IsDeclined })
-    
+
     #Loop through the updates and decline any that match the version.
     ForEach ($Update in $Windows10Updates){
 
@@ -41,13 +41,13 @@ Function Invoke-SelectUpdatesPlugin{
         ForEach ($Edition in $SupportedEditions){
             If ($Update.Title -match $Edition){$EditionFound=$True}
         }
-        
+
         #If one of the supported editions was found then skip to the next update.
-        If($EditionFound -or (Test-Exlusions $Update)){
+        If($EditionFound -or (Test-Exclusions $Update)){
             Continue #Skip to the next update.
         } Else {
             $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Windows 10 Edition")
-        }        
+        }
     }
     Return $DeclinedUpdates
 }
