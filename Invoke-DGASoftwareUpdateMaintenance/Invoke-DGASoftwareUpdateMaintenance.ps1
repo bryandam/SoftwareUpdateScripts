@@ -840,17 +840,22 @@ If ($ConfigFile){
 
             #If there's no value then treat it like a switch.  Otherwise, process the value.
             If($Data.Count -eq 2){
-                $Data[1]=$Data[1].Trim()
-
-
+                If ($Data[0] -eq 'SiteCode') { #force a numeric SiteCode to be a string
+                    $Data[1]=[string]$Data[1].Trim()
+                } Else {
+                    $Data[1]=$Data[1].Trim()
+                }
                 #Try to evaluate the value as an expression otherwise use the value as-is.
                 Try{
-                    Set-Variable -Name $Data[0] -Value ( Invoke-Expression $Data[1]) -Force -WhatIf:$False
+                    If ($Data[0] -eq 'SiteCode') { #force a numeric SiteCode to be a string
+                        Set-Variable -Name $Data[0] -Value $(Invoke-Expression [string]$Data[1]) -Force -WhatIf:$False
+                    } else {
+                        Set-Variable -Name $Data[0] -Value (Invoke-Expression $Data[1]) -Force -WhatIf:$False
+                    }
                 }
                 Catch{
                     Set-Variable -Name $Data[0] -Value $Data[1] -Force -WhatIf:$False
                 }
-
             }
             ElseIf ($Data.Count -eq 1) {
                 Set-Variable -Name $Data[0] -Value $True -Force -WhatIf:$False
