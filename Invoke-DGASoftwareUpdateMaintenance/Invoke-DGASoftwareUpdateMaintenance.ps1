@@ -1410,7 +1410,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
         ForEach ($Update in $DeclinedUpdates) {
 
             #Exclude superseded updates that do not meet the last level or exlusion period criteria.
-            If (($Update.CreationDate -lt $ExclusionDateDelete) -and (! (Test-Exlusions $Update)))  {
+            If (($Update.CreationDate -lt $ExclusionDateDelete) -and (! (Test-Exclusions $Update)))  {
 
                 #Add the update to the hash and count the number of superseded updates we decline.
                 $UpdatesToDelete.Set_Item($Update.Id.UpdateId,"Deleted")
@@ -1432,7 +1432,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                 $countSuperseded++
 
                 #Exclude superseded updates that do not meet the last level or exlusion period criteria.
-                If ((($DeclineLastLevelOnly -and !$Update.HasSupersededUpdates) -or !$DeclineLastLevelOnly) -and ($Update.CreationDate -lt $ExclusionDate) -and (! (Test-Exlusions $Update)))  {
+                If ((($DeclineLastLevelOnly -and !$Update.HasSupersededUpdates) -or !$DeclineLastLevelOnly) -and ($Update.CreationDate -lt $ExclusionDate) -and (! (Test-Exclusions $Update)))  {
 
                     #Add the update to the hash and count the number of superseded updates we decline.
                     $UpdatesToDecline.Set_Item($Update.Id.UpdateId,"Superseded")
@@ -1454,7 +1454,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
             ForEach ($SearchString In $DeclineByTitle)
             {
                 #Find search string matches that aren't already declined by an earlier match.
-                If (($Update.Title -ilike $SearchString) -and (! (Test-Exlusions $Update)))
+                If (($Update.Title -ilike $SearchString) -and (! (Test-Exclusions $Update)))
                 {
                     #Add the update to the hash, count it, and set the AlreadyDeclined variable so we don't try to add it again.
                     $UpdatesToDecline.Set_Item($Update.Id.UpdateId,"ByTitle: $SearchString")
