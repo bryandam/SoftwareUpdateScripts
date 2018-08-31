@@ -12,12 +12,12 @@ Version 2.0: 06/29/18 Fixed issue with selecting multiple editions.
 #>
 #Un-comment and add elements to this array for editions you support.
 #Note: You must escape any parenthesis with the forward slash.  Ex.: "Office 365 Client Update - Monthly Channel \(Targeted\) Version"
-#$SupportedEditions = @("Office 365 Client Update - Monthly Channel Version","Office 365 Client Update - Semi-annual Channel Version")
+$SupportedEditions = @("Office 365 Client Update - Monthly Channel Version","Office 365 Client Update - Semi-annual Channel Version")
 
 #Set this to $True to decline all but the latest version of each editions or $False to ignore versions.
 $LatestVersionOnly=$False
 
-#If Microsoft decides to change their naming scheme you will need to udpate this variable to support the new scheme.
+#If Microsoft decides to change their naming scheme you will need to update this variable to support the new scheme.
 $KnownEditions=@("Office 365 Client Update - First Release for Deferred Channel","Office 365 Client Update - First Release for Current Channel","Office 365 Client Update - Current Channel","Office 365 Client Update - Deferred Channel", "Office 365 Client Update - Monthly Channel Version","Office 365 Client Update - Monthly Channel \(Targeted\) Version","Office 365 Client Update - Semi-annual Channel Version","Office 365 Client Update - Semi-annual Channel \(Targeted\) Version")
 Function Invoke-SelectUpdatesPlugin{
 
@@ -57,7 +57,7 @@ Function Invoke-SelectUpdatesPlugin{
                         }
                     }
 
-                    #Check for exlusions
+                    #Check for exclusions
                     If (Test-Exclusions $Update)
                     {
                         #Do Nothing
