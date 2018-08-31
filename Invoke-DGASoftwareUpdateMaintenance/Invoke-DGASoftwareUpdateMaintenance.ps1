@@ -1290,7 +1290,7 @@ If($FirstRun){
 
 	Add-TextToCMLog $LogFile "User selected FirstRun. Will try to delete obsolete updates by directly calling the database store procedures." $component 1
 
-	If (!$UseCustomIndexes){Add-TextToCMLog $LogFile "You are have chosen not to use the UseCustomIndexes feature.  This can cause the update deletion process to be painfully slow and it is recommended that you use it." $component 2}
+	If (!$UseCustomIndexes){Add-TextToCMLog $LogFile "You have chosen not to use the UseCustomIndexes feature.  While the custom indexes are not suported by Microsoft the update deletion process can be painfully slow and it is recommended that you use them." $component 2}
 
 	$WSUSServerDB = Get-WSUSDB $WSUSServer
 

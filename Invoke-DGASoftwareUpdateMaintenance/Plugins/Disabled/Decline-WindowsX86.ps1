@@ -24,8 +24,8 @@ $SupportedWinX86Versions = @('Windows Server 2003, Datacenter Edition', 'Windows
 
 Function Invoke-SelectUpdatesPlugin {
 	[CmdletBinding()]
-	$DeclinedUpdates = @{}
-	$WindowsX86Updates = ($Updates | Where {!$_.IsDeclined -and ($_.LegacyName -notlike '*DOTNET*-X86-TSL') -and ($_.LegacyName -like 'WSUS*_x86' -or $_.LegacyName -like '*WINDOWS*-KB*-X86-*' -or $_.LegacyName -like 'KB*-*-X86-TSL')})
+	$DeclineUpdates = @{}
+	$WindowsX86Updates = ($ActiveUpdates | Where {($_.LegacyName -notlike '*DOTNET*-X86-TSL') -and ($_.LegacyName -like 'WSUS*_x86' -or $_.LegacyName -like '*WINDOWS*-KB*-X86-*' -or $_.LegacyName -like 'KB*-*-X86-TSL')})
 	#WINDOWS7CLIENT-KB982799-X86-308159-23798
 	#WINDOWS7EMBEDDED-KB2124261-X86-325274-25932
 	#KB4099989-Windows10Rs3Client-RTM-ServicingStackUpdate-X86-TSL-World
@@ -36,9 +36,9 @@ Function Invoke-SelectUpdatesPlugin {
 	#Loop through the updates and decline any that match the version.
 	ForEach ($update in $WindowsX86Updates) {
 		If (($update.ProductTitles | Select-String -pattern $SupportedWinX86Versions -SimpleMatch -List).Count -eq 0) {
-			$DeclinedUpdates.Set_Item($Update.Id.UpdateId, "Unsupported OS: $($update.ProductTitles) (32-bit)")
+			$DeclineUpdates.Set_Item($Update.Id.UpdateId, "Unsupported OS: $($update.ProductTitles) (32-bit)")
 		}
 	}
-	Write-Debug -Message 'Explore $Updates, $DeclinedUpdates, $WindowsX86Updates and $SupportedWinX86Versions'
-	Return $DeclinedUpdates
+	Write-Debug -Message 'Explore $Updates, $DeclineUpdates, $WindowsX86Updates and $SupportedWinX86Versions'
+	Return $DeclineUpdates
 }

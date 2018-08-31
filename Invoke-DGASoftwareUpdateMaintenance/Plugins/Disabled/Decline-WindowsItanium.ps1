@@ -18,11 +18,11 @@
 ################################################################################
 
 Function Invoke-SelectUpdatesPlugin{
-    $DeclinedUpdates = @{}
-    $WindowsItaniumUpdates = ($Updates | Where-Object {!$_.IsDeclined -and ($_.LegacyName -like '*-IA64-*' -or $_.ProductTitles -like '* Itanium*' -or $_.ProductTitles -like '* for IA64 *')})
+    $DeclineUpdates = @{}
+    $WindowsItaniumUpdates = ($ActiveUpdates | Where-Object {($_.LegacyName -like '*-IA64-*' -or $_.ProductTitles -like '* Itanium*' -or $_.ProductTitles -like '* for IA64 *')})
     #Loop through the updates and decline any that match the version.
     ForEach ($Update in $WindowsItaniumUpdates) {
-        $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Windows Itanium")
+        $DeclineUpdates.Set_Item($Update.Id.UpdateId,"Windows Itanium")
     }
-    Return $DeclinedUpdates
+    Return $DeclineUpdates
 }

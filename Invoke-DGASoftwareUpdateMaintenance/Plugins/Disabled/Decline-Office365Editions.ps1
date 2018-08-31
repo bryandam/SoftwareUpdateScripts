@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
 Decline updates for editions of Windows 10 your organization does not support.
 .DESCRIPTION
@@ -17,16 +17,16 @@ Version 2.0: 06/29/18 Fixed issue with selecting multiple editions.
 #Set this to $True to decline all but the latest version of each editions or $False to ignore versions.
 $LatestVersionOnly=$False
 
-#If Microsoft decides to change their naming scheme you will need to update this variable to support the new scheme.
+#If Microsoft decides to change their naming scheme you will need to udpate this variable to support the new scheme.
 $KnownEditions=@("Office 365 Client Update - First Release for Deferred Channel","Office 365 Client Update - First Release for Current Channel","Office 365 Client Update - Current Channel","Office 365 Client Update - Deferred Channel", "Office 365 Client Update - Monthly Channel Version","Office 365 Client Update - Monthly Channel \(Targeted\) Version","Office 365 Client Update - Semi-annual Channel Version","Office 365 Client Update - Semi-annual Channel \(Targeted\) Version")
 Function Invoke-SelectUpdatesPlugin{
 
 
-    $DeclinedUpdates = @{}
-    If (!$SupportedEditions){Return $DeclinedUpdates}
+    $DeclineUpdates = @{}
+    If (!$SupportedEditions){Return $DeclineUpdates}    
     $maxVersions = @{}
-    $Office365Updates = ($Updates | Where{$_.ProductTitles -eq "Office 365 Client" -and !$_.IsDeclined})
-
+    $Office365Updates = ($ActiveUpdates | Where{$_.ProductTitles.Contains('Office 365 Client')})    
+    
     #Loop through the updates and editions and determine the highest version number per edition.
     If ($LatestVersionOnly){
         ForEach ($Update in $Office365Updates){
@@ -46,7 +46,7 @@ Function Invoke-SelectUpdatesPlugin{
 
                 #Verify that the update is a known edition.
                 If($Update.Title -match $KnownEdition){
-
+                                                        
                     #Determine if the update is a supported version and what known edition it is.
                     $FoundSupportedVersion = $False
                     $FoundEdition=""
@@ -57,26 +57,26 @@ Function Invoke-SelectUpdatesPlugin{
                         }
                     }
 
-                    #Check for exclusions
+                    #Check for exlusions
                     If (Test-Exclusions $Update)
                     {
                         #Do Nothing
 
-                    #If a supported version was found and we're only keeping the latest version.
+                    #If a supported version was found and we're only keeping the latest version.                  
                     } ElseIf ($FoundSupportedVersion -and $LatestVersionOnly){
                         #Decline updates that are not the latest version.
                         If ($Update.Title -notlike "*Version $($maxVersions[$KnownEdition])*"){
-                            $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Office 365 Updates: Version")
+                            $DeclineUpdates.Set_Item($Update.Id.UpdateId,"Office 365 Updates: Version")
                         }
                     #If a supported version was not found then decline it.
                     } ElseIf (! $FoundSupportedVersion) {
-                        $DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Office 365 Updates: Edition")
-                    }
-                } #If a Known Edition
+                        $DeclineUpdates.Set_Item($Update.Id.UpdateId,"Office 365 Updates: Edition")
+                    }                                        
+                } #If a Known Edition                 
             } #ForEach Edition
 
 
-
+        
     } #Office 365 Updates
-    Return $DeclinedUpdates
+    Return $DeclineUpdates
 }
