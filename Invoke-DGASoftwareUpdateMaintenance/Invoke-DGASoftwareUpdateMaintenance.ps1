@@ -165,6 +165,8 @@ Param(
 
     #Force the script to run even if it was run recently.
     [Parameter(ParameterSetName='cmdline')]
+    
+    [Parameter(ParameterSetName='configfile')]
     [switch]$Force,
 
     #After declining updates resync the update catalog to bring the changes into Configuration Manager.
@@ -788,6 +790,7 @@ $cmSiteVersion = [version]"5.00.8540.1000"
 $scriptVersion = "2.4"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
+$datFilePath = "filesystem::$(Join-Path $scriptPath 'updatemaint.dat')"
 $IndexArray = @{
                 'tbLocalizedProperty' = 'LocalizedPropertyID'
                 'tbLocalizedPropertyForRevision'='LocalizedPropertyID'
@@ -901,11 +904,12 @@ If (Test-path  $LogFile -PathType Leaf) {
 }
 Add-TextToCMLog $LogFile "$component started (Version $($scriptVersion))." $component 1
 
-#Check to see if this script has ran recently.
+#The script no longer uses the lastran file so remove it if found.
 $lastRanPath = "filesystem::$(Join-Path $scriptPath "lastran_$($component)")"
+If ((Test-Path $lastRanPath) -and !$WhatIfPreference){Remove-Item -Path $lastRanPath -Force}
 
-
-If (Test-Path -Path $lastRanPath -NewerThan ((get-date).AddHours(-24).ToString())){
+#Check to see if this script has ran recently.
+If (Test-Path -Path $datFilePath -NewerThan ((get-date).AddHours(-24).ToString())){
     #If the user has chosen to force the script to run or is running in WhatIf mode then run the script anyways.
     If ($Force -or $WhatIfPreference){
         Add-TextToCMLog $LogFile "The script was run in the last 24 hours but is being forced to run." $component 1
@@ -914,9 +918,6 @@ If (Test-Path -Path $lastRanPath -NewerThan ((get-date).AddHours(-24).ToString()
         Return
     }
 }
-
-#Mark the last time the script ran.  We do this now and at the end to avoid running multiple instances of the script at the same time.
-If (!$WhatIfPreference){Get-Date | Out-File $lastRanPath -Force}
 
 #Check to make sure we're running this on a primary site server that has the SMS namespace.
 If (!($StandAloneWSUS) -and !(Get-Wmiobject -namespace "Root" -class "__Namespace" -Filter "Name = 'SMS'")){
@@ -931,8 +932,8 @@ If (!$UseCustomIndexes -and !$RemoveCustomIndexes -and !$FirstRun -and !$DeleteD
 }
 
 #Make sure the superseded updates parameters make sense.
-If (($ExclusionPeriod -or $DeclineLastLevelOnly) -and !$DeclineSuperseded){
-    Add-TextToCMLog $LogFile "You must use the DeclineSuperseded parameter when using the ExclusionPeriod or DeclineLastLevelOnly parameters." $component 3
+If (($ExclusionPeriod -or $DeclineLastLevelOnly) -and !$DeclineSuperseded -and !$DeleteDeclined){
+    Add-TextToCMLog $LogFile "You must use either the DeclineSuperseded or DeleteDeclined parameters when using the ExclusionPeriod or DeclineLastLevelOnly parameters." $component 3
     Return
 }
 
@@ -990,6 +991,12 @@ If ($MaxUpdateRuntime){
         Write-Error "You must pass either a string or a hashtable for the -Hash parameter."
     }
 }
+
+#Load and save the dat file in order to mark the start of the script.
+[Hashtable]$DeclinedUpdateData = @{}
+If (Test-Path $datFilePath){[Hashtable]$DeclinedUpdateData = Import-Clixml -Path $datFilePath}
+If (!$WhatIfPreference){Export-Clixml -Path $datFilePath -InputObject $DeclinedUpdateData -Force}
+Add-TextToCMLog $LogFile "Loaded $($DeclinedUpdateData.Count) declined updates from the data file." $component 1
 #endregion
 
 #Change the directory to the site location.
@@ -1307,7 +1314,20 @@ If($FirstRun){
 			Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 1
         }
         Else{
-			$ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "exec spGetObsoleteUpdatesToCleanup"
+			#$ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "exec spGetObsoleteUpdatesToCleanup"
+            $ObsoleteUpdates= Invoke-SQLCMD $SqlConnection "CREATE TABLE tmpObsoleteUpdates
+                                (    
+                                    LocalUpdateID  int,
+                                )
+                                INSERT tmpObsoleteUpdates EXEC spGetObsoleteUpdatesToCleanup
+
+                                SELECT tOU.LocalUpdateID,vU.UpdateId, vU.DefaultTitle
+                                FROM tmpObsoleteUpdates tOU
+                                Left Join tbUpdate tU
+	                                On tOU.LocalUpdateID = tU.LocalUpdateID
+                                Left Join [PUBLIC_VIEWS].[vUpdate] vU
+	                                on tU.UpdateID = vU.UpdateId
+                                DROP TABLE tmpObsoleteUpdates"
 			Add-TextToCMLog $LogFile "Found $($ObsoleteUpdates.Rows.Count) obsolete updates to delete." $component 1
 
 			#Loop through each result and delete
@@ -1317,9 +1337,9 @@ If($FirstRun){
 
 				#Track the progress all pretty-like.
 				$percentComplete = [math]::Round(($i/$ObsoleteUpdates.Rows.Count) * 100)
-				Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update $($ObsoleteUpdates.Rows[$i][0]) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
+				Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update '$($ObsoleteUpdates.Rows[$i][2])' ($($ObsoleteUpdates.Rows[$i][1])) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
 
-				Add-TextToCMLog $LogFile "Attempting to delete update $($ObsoleteUpdates.Rows[$i][0]) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
+				Add-TextToCMLog $LogFile "Attempting to delete update '$($ObsoleteUpdates.Rows[$i][2])' ($($ObsoleteUpdates.Rows[$i][1])) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
 				If (!($WhatIfPreference)){
 					Invoke-SQLCMD $SqlConnection "spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"
 				}
@@ -1405,22 +1425,30 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     }
     $ExclusionDate = (Get-Date).AddMonths($ExclusionPeriod * -1)
 
-   #If deleting declined updates
+   #If deleting declined updates.
     If ($DeleteDeclined){
         $ExclusionDateDelete = (Get-Date).AddMonths($ExclusionPeriod * -2)
 
-        Add-TextToCMLog $LogFile "Deleting deleted updates created before $ExclusionDateDelete." $component 1
+        Add-TextToCMLog $LogFile "Deleting declined updates created before $ExclusionDateDelete." $component 1
 
-        #Loop through updates and add those that match the user's criteria to the hash.
+        #Loop through declined updates.
         ForEach ($Update in $DeclinedUpdates) {
 
-            #Exclude superseded updates that do not meet the last level or exlusion period criteria.
-            If (($Update.CreationDate -lt $ExclusionDateDelete) -and (! (Test-Exclusions $Update)))  {
+            #Check that the update is in the declined update data file.  If not, add it with the current date.
+            If($DeclinedUpdateData.ContainsKey($Update.Id.UpdateId)){
 
-                #Add the update to the hash and count the number of superseded updates we decline.
-                $UpdatesToDelete.Set_Item($Update.Id.UpdateId,"Deleted")
-                $countDeleted++
+                #Delete the updates if it's was declined before the exclusion date.
+                If (([DateTime]$DeclinedUpdateData.($Update.Id.UpdateId)) -lt $ExclusionDateDelete)  {
+
+                    #Add the update to the hash and count the number of superseded updates we decline.
+                    $UpdatesToDelete.Set_Item($Update.Id.UpdateId,"Declined")
+                    $countDeleted++
+                }
             }
+            Else{
+                $DeclinedUpdateData.Set_Item($Update.Id.UpdateId,(Get-Date))
+            }
+            
         } #ForEach DeclinedUpdates
     } #Deletedeclined
 
@@ -1437,11 +1465,21 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                 $countSuperseded++
 
                 #Exclude superseded updates that do not meet the last level or exlusion period criteria.
-                If ((($DeclineLastLevelOnly -and !$Update.HasSupersededUpdates) -or !$DeclineLastLevelOnly) -and ($Update.CreationDate -lt $ExclusionDate) -and (! (Test-Exclusions $Update)))  {
+                If ((($DeclineLastLevelOnly -and !$Update.HasSupersededUpdates) -or !$DeclineLastLevelOnly) -and (! (Test-Exclusions $Update)))  {
 
-                    #Add the update to the hash and count the number of superseded updates we decline.
-                    $UpdatesToDecline.Set_Item($Update.Id.UpdateId,"Superseded")
-                    $countDeclinedSuperseded++
+                    #Get the superseding updates.
+                    $SupersedingUpdates = $Update.GetRelatedUpdates([Microsoft.UpdateServices.Administration.UpdateRelationship]::UpdatesThatSupersedeThisUpdate)
+
+                    #Loop through the superseding updates.
+                    ForEach ($SupersedingUpdate in $SupersedingUpdates){
+
+                        #If any of the superseding updates were created before the exclusion date then decline the supserseded update.
+                        If ($SupersedingUpdate.CreationDate -le $ExclusionDate){
+                            #Add the update to the hash and count the number of superseded updates we decline.
+                            $UpdatesToDecline.Set_Item($Update.Id.UpdateId,"Superseded")
+                            $countDeclinedSuperseded++
+                        }
+                    }
                 }
             }
 
@@ -1585,12 +1623,16 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                         $Action = 'Declined'
                         $Source = $UpdatesToDecline.($Update.Id.UpdateId)
                         $countNewlyDeclined++
+
+                        #Save the declined date.
+                        $DeclinedUpdateData.Set_Item($Update.Id.UpdateId, (Get-Date))
                     }
                     #Delete the udpate.
                     If ($UpdatesToDelete.ContainsKey($Update.Id.UpdateId)){
                         If (!$WhatIfPreference){$WSUSServer.DeleteUpdate($Update.Id.UpdateId)}
                         $Action = 'Deleted'
                         $Source = $UpdatesToDelete.($Update.Id.UpdateId)
+                        $DeclinedUpdateData.Remove($Update.Id.UpdateId)
                         $countNewlyDeleted++
                     }
 
@@ -1640,7 +1682,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
     }
     Add-TextToCMLog $LogFile "Total Newly Declined Updates = $countNewlyDeclined"  $component 1
-    If($DeleteDeclined){Add-TextToCMLog $LogFile "Total Newly Deleted Updates = $countNewlyDeleted"  $component 1}
+    If($DeleteDeclined){Add-TextToCMLog $LogFile "Total Newly Deleted Updates = $countDeleted"  $component 1}
     Add-TextToCMLog $LogFile "Total Active Updates = $($AllUpdates.Count - $DeclinedUpdates.Count - $countNewlyDeclined)"  $component 1
     Add-TextToCMLog $LogFile "Total Updates = $($AllUpdates.Count - $countNewlyDeleted)"  $component 1
     Add-TextToCMLog $LogFile "========" $component 1
@@ -1739,7 +1781,7 @@ If ($CleanSUGs){
                 Add-TextToCMLog $LogFile "Removing $($Update.LocalizedDisplayName) from the $($SoftwareUpdateGroup.LocalizedDisplayName) software update group." $component 1
 
                 Try {
-                    Remove-CMSoftwareUpdateFromGroup -SoftwareUpdate $Update -SoftwareUpdateGroup $SoftwareUpdateGroup  -Force -WhatIf:$WhatIfPreference
+                    If(!$WhatIfPreference){Remove-CMSoftwareUpdateFromGroup -SoftwareUpdate $Update -SoftwareUpdateGroup $SoftwareUpdateGroup  -Force}
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to get remove '$($Update.LocalizedDisplayName)' from the update group '$($SoftwareUpdateGroup.LocalizedDisplayName)'." $component 3
                     Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
@@ -1878,7 +1920,7 @@ If ($MaxUpdateRuntime){
             Foreach ($Update in $Updates){
                 If ($Update.MaxExecutionTime -ne $MaximumRuntimeSeconds){
                     Try{
-                        Set-CMSoftwareUpdate -InputObject $Update -MaximumExecutionMinutes $Value.Value
+                        Set-CMSoftwareUpdate -InputObject $Update -MaximumExecutionMinutes $Value.Value | Out-Null
                         Add-TextToCMLog $LogFile "Set maximum runtime for '$($Update.LocalizedDisplayName)' to $($Value.Value) minutes." $component 1
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to set maximum runtime for '$($Update.LocalizedDisplayName)'." $component 3
@@ -2116,5 +2158,5 @@ Set-Location $OriginalLocation
 Write-Output "The script completed successfully.  Review the log file for detailed results."
 
 #Mark the last time the script ran if not ran with WhatIf
-If (!$WhatIfPreference){Get-Date | Out-File $lastRanPath -Force}
+If (!$WhatIfPreference){Export-Clixml -Path $datFilePath -InputObject $DeclinedUpdateData -Force}
 Write-Debug -Message 'Complete script?  Suspend script and interrogate $Updates, $DeclinedUpdates, etc.'
