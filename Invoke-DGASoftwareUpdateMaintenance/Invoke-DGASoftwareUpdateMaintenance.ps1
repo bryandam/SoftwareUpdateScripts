@@ -790,7 +790,6 @@ $cmSiteVersion = [version]"5.00.8540.1000"
 $scriptVersion = "2.4"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
-$datFilePath = "filesystem::$(Join-Path $scriptPath 'updatemaint.dat')"
 $IndexArray = @{
                 'tbLocalizedProperty' = 'LocalizedPropertyID'
                 'tbLocalizedPropertyForRevision'='LocalizedPropertyID'
@@ -904,12 +903,9 @@ If (Test-path  $LogFile -PathType Leaf) {
 }
 Add-TextToCMLog $LogFile "$component started (Version $($scriptVersion))." $component 1
 
-#The script no longer uses the lastran file so remove it if found.
-$lastRanPath = "filesystem::$(Join-Path $scriptPath "lastran_$($component)")"
-If ((Test-Path $lastRanPath) -and !$WhatIfPreference){Remove-Item -Path $lastRanPath -Force}
-
 #Check to see if this script has ran recently.
-If (Test-Path -Path $datFilePath -NewerThan ((get-date).AddHours(-24).ToString())){
+$lastRanPath = "filesystem::$(Join-Path $scriptPath "lastran_$($component)")"
+If (Test-Path -Path $lastRanPath -NewerThan ((get-date).AddHours(-24).ToString())){
     #If the user has chosen to force the script to run or is running in WhatIf mode then run the script anyways.
     If ($Force -or $WhatIfPreference){
         Add-TextToCMLog $LogFile "The script was run in the last 24 hours but is being forced to run." $component 1
@@ -918,6 +914,9 @@ If (Test-Path -Path $datFilePath -NewerThan ((get-date).AddHours(-24).ToString()
         Return
     }
 }
+
+#Mark the last time the script ran.  We do this now and at the end to avoid running multiple instances of the script at the same time.	
+If (!$WhatIfPreference){Get-Date | Out-File $lastRanPath -Force}
 
 #Check to make sure we're running this on a primary site server that has the SMS namespace.
 If (!($StandAloneWSUS) -and !(Get-Wmiobject -namespace "Root" -class "__Namespace" -Filter "Name = 'SMS'")){
@@ -991,12 +990,6 @@ If ($MaxUpdateRuntime){
         Write-Error "You must pass either a string or a hashtable for the -Hash parameter."
     }
 }
-
-#Load and save the dat file in order to mark the start of the script.
-[Hashtable]$DeclinedUpdateData = @{}
-If (Test-Path $datFilePath){[Hashtable]$DeclinedUpdateData = Import-Clixml -Path $datFilePath}
-If (!$WhatIfPreference){Export-Clixml -Path $datFilePath -InputObject $DeclinedUpdateData -Force}
-Add-TextToCMLog $LogFile "Loaded $($DeclinedUpdateData.Count) declined updates from the data file." $component 1
 #endregion
 
 #Change the directory to the site location.
@@ -1164,67 +1157,67 @@ If ($WSUSServer -eq $null) {
 
 Add-TextToCMLog $LogFile "Connected to WSUS server $WSUSFQDN." $component 1
 
+$WSUSServerDB = Get-WSUSDB $WSUSServer
+If(!$WSUSServerDB)
+{
+	Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+    Set-Location $OriginalLocation
+    Return
+}
+
 #If the user has chosen to add custom indexes to the WSUS database.
 If ($UseCustomIndexes){
 
 	Add-TextToCMLog $LogFile "User selected AddIndex. Will try to verify indexes and create where necessary." $component 1
 
-	$WSUSServerDB = Get-WSUSDB $WSUSServer
+	$SqlConnection = Connect-WSUSDB $WSUSServerDB
 
-    If(!$WSUSServerDB)
+    If(!$SqlConnection)
     {
-		Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+		Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 3
     }
     Else{
 
-		$SqlConnection = Connect-WSUSDB $WSUSServerDB
+		#Loop through the hashtable and create the indexes.
+		$FailedIndex = $False
+		ForEach ($TableName in $IndexArray.Keys){
 
-        If(!$SqlConnection)
-        {
-			Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 3
-        }
-        Else{
+			#Determine if the index exists and create it if not.
+			$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
 
-			#Loop through the hashtable and create the indexes.
-			$FailedIndex = $False
-			ForEach ($TableName in $IndexArray.Keys){
+			#If the index doesn't exist then create it.
+			If($Index.Rows.Count -eq 0 ){
+				Add-TextToCMLog $LogFile "The index IX_DGA_$TableName does not exist and will be created." $component 1
 
-				#Determine if the index exists and create it if not.
-				$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+				If (!$WhatIfPreference){
 
-				#If the index doesn't exist then create it.
-				If($Index.Rows.Count -eq 0 ){
-					Add-TextToCMLog $LogFile "The index IX_DGA_$TableName does not exist and will be created." $component 1
+					#Add the index.
+					$Index = Invoke-SQLCMD $SqlConnection "CREATE NONCLUSTERED INDEX IX_DGA_$TableName ON $TableName($($IndexArray[$TableName]))"
 
-					If (!$WhatIfPreference){
-
-						#Add the index.
-						$Index = Invoke-SQLCMD $SqlConnection "CREATE NONCLUSTERED INDEX IX_DGA_$TableName ON $TableName($($IndexArray[$TableName]))"
-
-						#Verify that the index exists now.
-						$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
-						If($Index.Rows.Count -eq 0 ){
-							Add-TextToCMLog $LogFile "Failed to create the index IX_DGA_$TableName." $component 2
-							$FailedIndex = $True
-                        }
-                        Else{
-							Add-TextToCMLog $LogFile "Successfully created the index IX_DGA_$TableName." $component 1
-						}
+					#Verify that the index exists now.
+					$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+					If($Index.Rows.Count -eq 0 ){
+						Add-TextToCMLog $LogFile "Failed to create the index IX_DGA_$TableName." $component 2
+						$FailedIndex = $True
+                    }
+                    Else{
+						Add-TextToCMLog $LogFile "Successfully created the index IX_DGA_$TableName." $component 1
 					}
 				}
-			} #ForEach IndexArray
-
-			If ($FailedIndex){
-				Add-TextToCMLog $LogFile "Some indexes failed to create." $component 1
-            }
-            Else{
-				Add-TextToCMLog $LogFile "All indexes have been added or verified." $component 1
 			}
+		} #ForEach IndexArray
 
-			#Disconnect from the database.
-			$SqlConnection.Close()
-		} #Connect-WSUSDB
-	} #Get-WSUSDB
+		If ($FailedIndex){
+			Add-TextToCMLog $LogFile "Some indexes failed to create." $component 1
+        }
+        Else{
+			Add-TextToCMLog $LogFile "All indexes have been added or verified." $component 1
+		}
+
+		#Disconnect from the database.
+		$SqlConnection.Close()
+	} #Connect-WSUSDB
+	
 
 }
 
@@ -1233,63 +1226,53 @@ If ($RemoveCustomIndexes){
 
 	Add-TextToCMLog $LogFile "User selected RemoveCustomIndexes. Will try to remove the custom indexes." $component 1
 
-	$WSUSServerDB = Get-WSUSDB $WSUSServer
+	$SqlConnection = Connect-WSUSDB $WSUSServerDB
 
-    If(!$WSUSServerDB)
+    If(!$SqlConnection)
     {
-		Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+		Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 3
     }
     Else{
 
-		$SqlConnection = Connect-WSUSDB $WSUSServerDB
+		#Loop through the hashtable and remove the indexes.
+		$FailedIndex = $False
+		ForEach ($TableName in $IndexArray.Keys){
 
-        If(!$SqlConnection)
-        {
-			Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 3
-        }
-        Else{
+			#Determine if the index exists.
+			$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
 
-			#Loop through the hashtable and remove the indexes.
-			$FailedIndex = $False
-			ForEach ($TableName in $IndexArray.Keys){
+			#If the index exists then remove it.
+			If($Index.Rows.Count -gt 0 ){
+				Add-TextToCMLog $LogFile "The index IX_DGA_$TableName exists and will be removed." $component 1
 
-				#Determine if the index exists.
-				$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+				If (!$WhatIfPreference){
 
-				#If the index exists then remove it.
-				If($Index.Rows.Count -gt 0 ){
-					Add-TextToCMLog $LogFile "The index IX_DGA_$TableName exists and will be removed." $component 1
+					#Remove the index.
+					$Index = Invoke-SQLCMD $SqlConnection "DROP INDEX IX_DGA_$TableName ON $TableName"
 
-					If (!$WhatIfPreference){
-
-						#Remove the index.
-						$Index = Invoke-SQLCMD $SqlConnection "DROP INDEX IX_DGA_$TableName ON $TableName"
-
-						#Verify that the index no longer exists.
-						$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
-						If($Index.Rows.Count -gt 0 ){
-							Add-TextToCMLog $LogFile "Failed to remove the index IX_DGA_$TableName." $component 2
-							$FailedIndex = $True
-                        }
-                        Else{
-							Add-TextToCMLog $LogFile "Successfully removed the index IX_DGA_$TableName." $component 1
-						}
+					#Verify that the index no longer exists.
+					$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+					If($Index.Rows.Count -gt 0 ){
+						Add-TextToCMLog $LogFile "Failed to remove the index IX_DGA_$TableName." $component 2
+						$FailedIndex = $True
+                    }
+                    Else{
+						Add-TextToCMLog $LogFile "Successfully removed the index IX_DGA_$TableName." $component 1
 					}
 				}
-			} #ForEach IndexArray
-
-			If ($FailedIndex){
-				Add-TextToCMLog $LogFile "Some indexes failed to remove." $component 1
-            }
-            Else{
-				Add-TextToCMLog $LogFile "All indexes have been removed." $component 1
 			}
+		} #ForEach IndexArray
 
-			#Disconnect from the database.
-			$SqlConnection.Close()
-		} #Connect-WSUSDB
-	} #Get-WSUSDB
+		If ($FailedIndex){
+			Add-TextToCMLog $LogFile "Some indexes failed to remove." $component 1
+        }
+        Else{
+			Add-TextToCMLog $LogFile "All indexes have been removed." $component 1
+		}
 
+		#Disconnect from the database.
+		$SqlConnection.Close()
+	} #Connect-WSUSDB
 }
 
 #If the user has used the FirstRun parameter.
@@ -1299,65 +1282,55 @@ If($FirstRun){
 
 	If (!$UseCustomIndexes){Add-TextToCMLog $LogFile "You have chosen not to use the UseCustomIndexes feature.  While the custom indexes are not suported by Microsoft the update deletion process can be painfully slow and it is recommended that you use them." $component 2}
 
-	$WSUSServerDB = Get-WSUSDB $WSUSServer
+	$SqlConnection = Connect-WSUSDB $WSUSServerDB
 
-    If(!$WSUSServerDB)
+    If(!$SqlConnection)
     {
-		Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 1
+		Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 1
     }
     Else{
+		#$ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "exec spGetObsoleteUpdatesToCleanup"
+        $ObsoleteUpdates= Invoke-SQLCMD $SqlConnection "CREATE TABLE tmpObsoleteUpdates
+                            (    
+                                LocalUpdateID  int,
+                            )
+                            INSERT tmpObsoleteUpdates EXEC spGetObsoleteUpdatesToCleanup
 
-		$SqlConnection = Connect-WSUSDB $WSUSServerDB
+                            SELECT tOU.LocalUpdateID,vU.UpdateId, vU.DefaultTitle
+                            FROM tmpObsoleteUpdates tOU
+                            Left Join tbUpdate tU
+	                            On tOU.LocalUpdateID = tU.LocalUpdateID
+                            Left Join [PUBLIC_VIEWS].[vUpdate] vU
+	                            on tU.UpdateID = vU.UpdateId
+                            DROP TABLE tmpObsoleteUpdates"
+		Add-TextToCMLog $LogFile "Found $($ObsoleteUpdates.Rows.Count) obsolete updates to delete." $component 1
 
-        If(!$SqlConnection)
+		#Loop through each result and delete
+		If ($WhatIfPreference) {Add-TextToCMLog $LogFile "The WhatIf parameter was sent.  No obsolete updates will actually be deleted." $component 2}
+        For ($i=0; $i -lt $ObsoleteUpdates.Rows.Count; $i++)
         {
-			Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 1
-        }
-        Else{
-			#$ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "exec spGetObsoleteUpdatesToCleanup"
-            $ObsoleteUpdates= Invoke-SQLCMD $SqlConnection "CREATE TABLE tmpObsoleteUpdates
-                                (    
-                                    LocalUpdateID  int,
-                                )
-                                INSERT tmpObsoleteUpdates EXEC spGetObsoleteUpdatesToCleanup
 
-                                SELECT tOU.LocalUpdateID,vU.UpdateId, vU.DefaultTitle
-                                FROM tmpObsoleteUpdates tOU
-                                Left Join tbUpdate tU
-	                                On tOU.LocalUpdateID = tU.LocalUpdateID
-                                Left Join [PUBLIC_VIEWS].[vUpdate] vU
-	                                on tU.UpdateID = vU.UpdateId
-                                DROP TABLE tmpObsoleteUpdates"
-			Add-TextToCMLog $LogFile "Found $($ObsoleteUpdates.Rows.Count) obsolete updates to delete." $component 1
+			#Track the progress all pretty-like.
+			$percentComplete = [math]::Round(($i/$ObsoleteUpdates.Rows.Count) * 100)
+			Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update '$($ObsoleteUpdates.Rows[$i][2])' ($($ObsoleteUpdates.Rows[$i][1])) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
 
-			#Loop through each result and delete
-			If ($WhatIfPreference) {Add-TextToCMLog $LogFile "The WhatIf parameter was sent.  No obsolete updates will actually be deleted." $component 2}
-            For ($i=0; $i -lt $ObsoleteUpdates.Rows.Count; $i++)
-            {
-
-				#Track the progress all pretty-like.
-				$percentComplete = [math]::Round(($i/$ObsoleteUpdates.Rows.Count) * 100)
-				Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update '$($ObsoleteUpdates.Rows[$i][2])' ($($ObsoleteUpdates.Rows[$i][1])) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
-
-				Add-TextToCMLog $LogFile "Attempting to delete update '$($ObsoleteUpdates.Rows[$i][2])' ($($ObsoleteUpdates.Rows[$i][1])) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
-				If (!($WhatIfPreference)){
-					Invoke-SQLCMD $SqlConnection "spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"
-				}
+			Add-TextToCMLog $LogFile "Attempting to delete update '$($ObsoleteUpdates.Rows[$i][2])' ($($ObsoleteUpdates.Rows[$i][1])) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
+			If (!($WhatIfPreference)){
+				Invoke-SQLCMD $SqlConnection "spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"
 			}
+		}
 
-			#Clear the progress bar
-			Write-Progress -Activity "Deleting Obsolete Updates" -Completed
+		#Clear the progress bar
+		Write-Progress -Activity "Deleting Obsolete Updates" -Completed
 
-			#Disconnect from the database.
-			$SqlConnection.Close()
-		} #Connect-WSUSDB
-	} #Get-WSUSDB
+		#Disconnect from the database.
+		$SqlConnection.Close()
+	} #Connect-WSUSDB
 }
 
 #If the user has decided to decline updates.
 $UpdatesToDecline = @{} #Hash table updates to decline.
 $UpdatesToDelete = @{} #Hash table updates to delete.
-
 If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
 
     #Check the sync status.
@@ -1389,6 +1362,12 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     Else{
         Invoke-CMSyncCheck
     }
+
+    #Load the dat file in order to mark the start of the script.
+    $datFilePath = "filesystem::$(Join-Path $scriptPath "$($WSUSServerDB.ServerName.Split('.')[0])_$($WSUSServerDB.DatabaseName).dat")".ToLower()
+    [Hashtable]$DeclinedUpdateData = @{}
+    If (Test-Path $datFilePath){[Hashtable]$DeclinedUpdateData = Import-Clixml -Path $datFilePath}
+    Add-TextToCMLog $LogFile "Loaded $($DeclinedUpdateData.Count) declined updates from the data file $datFilePath." $component 1
 
     #Divide the updates list between declined or not.
     #This isn't strictly necessary but helps prevents myself or the plugins from trying to re-decline an update.
@@ -1686,6 +1665,11 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     Add-TextToCMLog $LogFile "Total Active Updates = $($AllUpdates.Count - $DeclinedUpdates.Count - $countNewlyDeclined)"  $component 1
     Add-TextToCMLog $LogFile "Total Updates = $($AllUpdates.Count - $countNewlyDeleted)"  $component 1
     Add-TextToCMLog $LogFile "========" $component 1
+
+    #Save the declined update data.
+    If (!$WhatIfPreference){Export-Clixml -Path $datFilePath -InputObject $DeclinedUpdateData -Force}
+    Add-TextToCMLog $LogFile "Saved $($DeclinedUpdateData.Count) declined updates to the data file $datFilePath." $component 1
+
 } #If DeclineSuperseded, DeclineByTitle, or DeclineByPlugins
 
 #If selected, run the WSUS cleanup wizard now that we've declined a bunch of stuff.
@@ -1866,7 +1850,7 @@ If ($CombineSUGs){
                     Add-TextToCMLog $LogFile  "Could not find a '$($YearlySUGName)' yearly software update group and will rename the '$($SUG.LocalizedDisplayName)' software update group." $component 1
 
                     Try{
-                        Set-CMSoftwareUpdateGroup -InputObject $SUG -NewName $YearlySUGName -WhatIf:$WhatIfPreference
+                        Set-CMSoftwareUpdateGroup -InputObject $SUG -NewName $YearlySUGName -WhatIf:$WhatIfPreference | Out-Null
                         $YearlySUG = $SUG
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to rename the '$($SUG.LocalizedDisplayName)' software update group." $component 3
@@ -1920,7 +1904,7 @@ If ($MaxUpdateRuntime){
             Foreach ($Update in $Updates){
                 If ($Update.MaxExecutionTime -ne $MaximumRuntimeSeconds){
                     Try{
-                        Set-CMSoftwareUpdate -InputObject $Update -MaximumExecutionMinutes $Value.Value | Out-Null
+                        If (!$WhatIfPreference){Set-CMSoftwareUpdate -InputObject $Update -MaximumExecutionMinutes $Value.Value}
                         Add-TextToCMLog $LogFile "Set maximum runtime for '$($Update.LocalizedDisplayName)' to $($Value.Value) minutes." $component 1
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to set maximum runtime for '$($Update.LocalizedDisplayName)'." $component 3
@@ -2158,5 +2142,5 @@ Set-Location $OriginalLocation
 Write-Output "The script completed successfully.  Review the log file for detailed results."
 
 #Mark the last time the script ran if not ran with WhatIf
-If (!$WhatIfPreference){Export-Clixml -Path $datFilePath -InputObject $DeclinedUpdateData -Force}
+If (!$WhatIfPreference){Get-Date | Out-File $lastRanPath -Force}
 Write-Debug -Message 'Complete script?  Suspend script and interrogate $Updates, $DeclinedUpdates, etc.'
