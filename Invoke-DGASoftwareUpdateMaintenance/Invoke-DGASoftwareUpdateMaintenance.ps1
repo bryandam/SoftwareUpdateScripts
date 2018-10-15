@@ -84,9 +84,9 @@ Version 2.4 ##/##/##
     Added a new parameter called UseCustomIndexes which will create custom indexes to the WSUS database that increases performance and helps fix Cleanup Wizard timeouts.
     Added a new parameter called RemoveCustomIndexes which will remove the custom indexes.
     Delete declined updates older than twice the Exclusion period using WSUS API.
+    FirstRun: Increase timeout to 24 hours and try to get et titles for obsolete updates.
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
-
 .LINK
 http://www.damgoodadmin.com
 #>
@@ -442,7 +442,7 @@ Function Invoke-WSUSSyncCheck {
     }
     Catch{
         Add-TextToCMLog $LogFile "Failed to get the subscription for the WSUS server to check the sync status." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Exit
     }
@@ -476,7 +476,7 @@ Function Invoke-WSUSSyncCheck {
             }
             Catch{
                 Add-TextToCMLog $LogFile "Failed to get the synchronization status for the WSUS server." $component 3
-                Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                 Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 Exit
             }
@@ -489,7 +489,7 @@ Function Invoke-WSUSSyncCheck {
         }
         Catch{
             Add-TextToCMLog $LogFile "Failed to get the synchronization info for the WSUS server." $component 3
-            Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+            Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
             Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
             Exit
         }
@@ -673,7 +673,7 @@ Function Get-WSUSDB{
     }
     Catch{
         Add-TextToCMLog $LogFile "Failed to get the WSUS database details from the active SUP." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
     }
@@ -689,8 +689,8 @@ Function Get-WSUSDB{
         Add-TextToCMLog $LogFile "Successfully tested the connection to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 1
     }
     Catch{
-        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3       
+        Add-TextToCMLog $LogFile "Error ($($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
     }
@@ -739,7 +739,7 @@ Function Connect-WSUSDB{
     }
     Catch{
         Add-TextToCMLog $LogFile "Failed to connect to the database using the connection string $($SqlConnectionString)." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
     }
@@ -769,7 +769,7 @@ Function Invoke-SQLCMD{
 
     Try{
         $SqlCmd = $SqlConnection.CreateCommand()
-        $SqlCmd.CommandTimeout = 1800 #30 minutes
+        $SqlCmd.CommandTimeout = 86400 #24 hours
         $SqlCmd.CommandText = $SqlCommand
         $SqlDataAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($SqlCmd)
         [System.Data.DataTable] $DataTable = New-Object System.Data.DataTable
@@ -778,7 +778,7 @@ Function Invoke-SQLCMD{
     }
     Catch{
         Add-TextToCMLog $LogFile "Failed to run the sql command: $SqlCommand." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "Error ($($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
     }
@@ -973,7 +973,7 @@ If ($MaxUpdateRuntime){
             $MaxUpdateRuntime = ConvertFrom-StringData $MaxUpdateRuntime
         } Catch {
             Add-TextToCMLog $LogFile "Failed to convert the MaximumUpdateRuntime value from a string to a hashtable.  This parameter will be ignored." $component 2
-            Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 2
+            Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 2
             Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 2
             $MaxUpdateRuntime = $null
         }
@@ -1008,7 +1008,7 @@ Try {
 } Catch {
     Add-TextToCMLog $LogFile "Failed to load the UpdateServices module." $component 3
     Add-TextToCMLog $LogFile "Please make sure that WSUS Admin Console is installed on this machine" $component 3
-    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
 }
 
@@ -1069,7 +1069,7 @@ Else{
             New-PSDrive -Name $SiteCode -PSProvider CMSite -Root "." -WhatIf:$False | Out-Null
         } Catch {
             Add-TextToCMLog $LogFile "The site's PS drive doesn't exist nor could it be created." $component 3
-            Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+            Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
             Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
             Return
         }
@@ -1081,7 +1081,7 @@ Else{
         Set-Location "$($SiteCode):"  | Out-Null
     } Catch {
         Add-TextToCMLog $LogFile "Could not set location to site: $($SiteCode)." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
     }
@@ -1125,7 +1125,7 @@ Else{
     }
     Catch {
         Add-TextToCMLog $LogFile "Failed to determine the active software update point." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         $WSUSServer = $null
         Set-Location $OriginalLocation
@@ -1140,7 +1140,7 @@ Try{
 } Catch {
 
     Add-TextToCMLog $LogFile "Failed to connect to the WSUS server $WSUSFQDN on port $WSUSPort with$(If(!$WSUSSSL){"out"}) SSL." $component 3
-    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     $WSUSServer = $null
     Set-Location $OriginalLocation
@@ -1289,32 +1289,35 @@ If($FirstRun){
 		Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 1
     }
     Else{
-		#$ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "exec spGetObsoleteUpdatesToCleanup"
-        $ObsoleteUpdates= Invoke-SQLCMD $SqlConnection "CREATE TABLE tmpObsoleteUpdates
-                            (    
-                                LocalUpdateID  int,
-                            )
-                            INSERT tmpObsoleteUpdates EXEC spGetObsoleteUpdatesToCleanup
-
-                            SELECT tOU.LocalUpdateID,vU.UpdateId, vU.DefaultTitle
-                            FROM tmpObsoleteUpdates tOU
-                            Left Join tbUpdate tU
-	                            On tOU.LocalUpdateID = tU.LocalUpdateID
-                            Left Join [PUBLIC_VIEWS].[vUpdate] vU
-	                            on tU.UpdateID = vU.UpdateId
-                            DROP TABLE tmpObsoleteUpdates"
+		$ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);exec spGetObsoleteUpdatesToCleanup"
 		Add-TextToCMLog $LogFile "Found $($ObsoleteUpdates.Rows.Count) obsolete updates to delete." $component 1
 
 		#Loop through each result and delete
 		If ($WhatIfPreference) {Add-TextToCMLog $LogFile "The WhatIf parameter was sent.  No obsolete updates will actually be deleted." $component 2}
-        For ($i=0; $i -lt $ObsoleteUpdates.Rows.Count; $i++)
-        {
+        For ($i=0; $i -lt $ObsoleteUpdates.Rows.Count; $i++){
+            #Get the update details.  This is done per-update to avoid any joins across large sets of data.  A poorly maintained SUSDB doens't like those.  Not one bit.
+            $LocalUpdateIdRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select UpdateID from tbUpdate Where LocalUpdateID = $($ObsoleteUpdates.Rows[$i][0])"
+            If ($LocalUpdateIdRows.Rows.Count -gt 0){
+                $LocalUpdateId = $LocalUpdateIdRows.Rows[0][0]
+                
+                $UpdateTitleRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select DefaultTitle from PUBLIC_VIEWS.vUpdate Where UpdateId = '$LocalUpdateId'"
+                If ($UpdateTitleRows.Rows.Count -gt 0){
+                    $UpdateTitle = $UpdateTitleRows.Rows[0][0]
+                }
+                Else{
+                    $UpdateTitle = 'Unknown'
+                }
+            }
+            Else{
+                $LocalUpdateId = 'Unknown'
+                $UpdateTitle = 'Unknown'
+            }
 
 			#Track the progress all pretty-like.
 			$percentComplete = [math]::Round(($i/$ObsoleteUpdates.Rows.Count) * 100)
-			Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update '$($ObsoleteUpdates.Rows[$i][2])' ($($ObsoleteUpdates.Rows[$i][1])) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
+			Write-Progress -Activity "Deleting Obsolete Updates" -Status "Deleting update '$($UpdateTitle)' ($($LocalUpdateId)) ($($i)/$($ObsoleteUpdates.Rows.Count))" -PercentComplete $percentComplete -CurrentOperation "$($percentComplete)% complete"
 
-			Add-TextToCMLog $LogFile "Attempting to delete update '$($ObsoleteUpdates.Rows[$i][2])' ($($ObsoleteUpdates.Rows[$i][1])) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
+			Add-TextToCMLog $LogFile "Attempting to delete update '$($UpdateTitle)' ($($LocalUpdateId)) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
 			If (!($WhatIfPreference)){
 				Invoke-SQLCMD $SqlConnection "spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"
 			}
@@ -1348,7 +1351,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     } Catch {
 	    Add-TextToCMLog $LogFile "Failed to get updates." $component 3
         Add-TextToCMLog $LogFile "If this operation timed out, try running the script with only the FirstRun parameter." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
 	    Set-Location $OriginalLocation
 	    Return
@@ -1553,7 +1556,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to load the $($File.BaseName) plugin and call Invoke-SelectUpdatesPlugin function." $component 3
-                    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 } Finally {
 
@@ -1622,7 +1625,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                 Catch [System.Exception]
                 {
                     Add-TextToCMLog $LogFile "Failed to decline update '$($Update.Title)' (ID: $($Update.Id.UpdateId)). Source: $($UpdatesToDecline.($Update.Id.UpdateId)) Error: $($_.Exception.Message)." $component 3
-                    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
             }
@@ -1713,7 +1716,7 @@ catch [System.Exception]
 {
     Add-TextToCMLog $LogFile "Failed to run WSUS cleanup wizard." $component 3
     Add-TextToCMLog $LogFile "You might need to run the WSUS cleanup wizard multiple times for complete success." $component 3
-    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     $WSUSServer = $null
 }
@@ -1735,7 +1738,7 @@ If ($ReSyncUpdates){
     Catch [System.Exception]
     {
         Add-TextToCMLog $LogFile "Failed to initiate a full update sync.)" $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     }
 }
@@ -1749,7 +1752,7 @@ If ($CleanSUGs){
         $SoftwareUpdateGroups = Get-CMSoftwareUpdateGroup
     } Catch {
         Add-TextToCMLog $LogFile "Failed to get software update groups." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     }
 
@@ -1768,7 +1771,7 @@ If ($CleanSUGs){
                     If(!$WhatIfPreference){Remove-CMSoftwareUpdateFromGroup -SoftwareUpdate $Update -SoftwareUpdateGroup $SoftwareUpdateGroup  -Force}
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to get remove '$($Update.LocalizedDisplayName)' from the update group '$($SoftwareUpdateGroup.LocalizedDisplayName)'." $component 3
-                    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
 
@@ -1784,7 +1787,7 @@ If ($CleanSUGs){
                     Remove-CMSoftwareUpdateGroup -InputObject $SoftwareUpdateGroup -Force -WhatIf:$WhatIfPreference
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to remove the '$($SoftwareUpdateGroup.LocalizedDisplayName)' software update group." $component 3
-                    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
 
@@ -1802,7 +1805,7 @@ If ($CombineSUGs){
         $SoftwareUpdateGroups = Get-CMSoftwareUpdateGroup
     } Catch {
         Add-TextToCMLog $LogFile "Failed to get software update groups." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     }
 
@@ -1811,7 +1814,7 @@ If ($CombineSUGs){
         $AutomaticDeploymentRules = Get-CMSoftwareUpdateAutoDeploymentRule -Fast
     } Catch {
         Add-TextToCMLog $LogFile "Failed to get automatic deployment rules." $component 3
-        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     }
 
@@ -1840,7 +1843,7 @@ If ($CombineSUGs){
                     $YearlySUG = Get-CMSoftwareUpdateGroup -Name $YearlySUGName
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to get the yearly software update group named '$($YearlySUG)'." $component 3
-                    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
 
@@ -1854,7 +1857,7 @@ If ($CombineSUGs){
                         $YearlySUG = $SUG
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to rename the '$($SUG.LocalizedDisplayName)' software update group." $component 3
-                        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                     }
                 } Else {
@@ -1865,7 +1868,7 @@ If ($CombineSUGs){
                         Get-CMSoftwareUpdate -UpdateGroup $SUG -Fast | Add-CMSoftwareUpdateToGroup -SoftwareUpdateGroup $YearlySUG -WhatIf:$WhatIfPreference
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to add the updates from the '$($SUG.LocalizedDisplayName)' software update group to the '$($YearlySUG.LocalizedDisplayName)' yearly software update group." $component 3
-                        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
 
                         #Skip to the next ADR SUG without removing the current one.
@@ -1878,7 +1881,7 @@ If ($CombineSUGs){
                         Remove-CMSoftwareUpdateGroup -InputObject $SUG -Force -WhatIf:$WhatIfPreference
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to delete the '$($SUG.LocalizedDisplayName)' software update group." $component 3
-                        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                     }
                 }
@@ -1908,7 +1911,7 @@ If ($MaxUpdateRuntime){
                         Add-TextToCMLog $LogFile "Set maximum runtime for '$($Update.LocalizedDisplayName)' to $($Value.Value) minutes." $component 1
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to set maximum runtime for '$($Update.LocalizedDisplayName)'." $component 3
-                        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                     }
                 }
@@ -1947,7 +1950,7 @@ If ($CleanSources){
             Catch [System.Exception]
             {
                 Add-TextToCMLog $LogFile "Failed to get the content folders from the SMS_PackageToContent WMI class for Package ID $($UpdateDeploymentPackage.PackageID) ." $component 3
-                Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                 Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
             }
 
@@ -1964,7 +1967,7 @@ If ($CleanSources){
                     Catch [System.Exception]
                     {
                         Add-TextToCMLog $LogFile "Failed to remove folder $($FolderPath) from the deployment package $($UpdateDeploymentPackage.Name)." $component 3
-                        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                     }
                 }
@@ -1996,7 +1999,7 @@ If ($UpdateADRDeploymentPackages){
             $CMPSSuppressFastNotUsedCheck = $False
         } Catch {
             Add-TextToCMLog $LogFile "Failed to get automatic deployment rules." $component 3
-            Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+            Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
             Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         }
 
@@ -2014,7 +2017,7 @@ If ($UpdateADRDeploymentPackages){
                 $DeploymentPackageID = ([xml]$AutomaticDeploymentRule.ContentTemplate).ContentActionXML.PackageID
             } Catch {
                 Add-TextToCMLog $LogFile "Failed to get the deployment package ID for '$($AutomaticDeploymentRule.Name)'." $component 3
-                Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                 Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 Continue #Go to the next ADR.
             }
@@ -2024,7 +2027,7 @@ If ($UpdateADRDeploymentPackages){
                 $DeploymentPackage = Get-CMSoftwareUpdateDeploymentPackage -Id $DeploymentPackageID
             } Catch {
                 Add-TextToCMLog $LogFile "Failed to get the deployment package name for '$($AutomaticDeploymentRule.Name)'." $component 3
-                Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                 Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 Continue #Go to the next ADR.
             }
@@ -2045,7 +2048,7 @@ If ($UpdateADRDeploymentPackages){
                     $CorrectDeploymentPackage = Get-CMSoftwareUpdateDeploymentPackage -Name $CorrectDeploymentPackageName
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to search for the the deployment package '$($CorrectDeploymentPackageName)'." $component 3
-                    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
 
@@ -2069,7 +2072,7 @@ If ($UpdateADRDeploymentPackages){
                                 New-Item "filesystem::$($NewDeploymentPackageSourcePath)" -ItemType "directory" -Force -WhatIf:$WhatIfPreference | Out-Null
                             } Catch {
                                 Add-TextToCMLog $LogFile "Failed to create a new deployment package source folder '$($NewDeploymentPackageSourcePath)'for the the deployment package '$($CorrectDeploymentPackageName)'." $component 3
-                                Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                                Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                                 Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                                 Continue #Go to the next ADR.
                             }
@@ -2080,7 +2083,7 @@ If ($UpdateADRDeploymentPackages){
                                 Add-TextToCMLog $LogFile "Created the new '$($CorrectDeploymentPackage.Name)' deployment package with ID '$($CorrectDeploymentPackage.PackageID)'." $component 1
                             } Catch {
                                 Add-TextToCMLog $LogFile "Failed to create a new deployment package '$($CorrectDeploymentPackage.Name)' for the the '$($AutomaticDeploymentRule.Name)' automatic deployment rule." $component 3
-                                Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                                Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                                 Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                                 Continue #Go to the next ADR.
                             }
@@ -2102,7 +2105,7 @@ If ($UpdateADRDeploymentPackages){
                                     }
                                 } Catch {
                                     Add-TextToCMLog $LogFile "Failed to deploy the new deployment package '$($CorrectDeploymentPackage.Name)' for the the '$($AutomaticDeploymentRule.Name)' automatic deployment rule to '$($Distribution.Name)'." $component 3
-                                    Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                                 }
                             }
@@ -2127,7 +2130,7 @@ If ($UpdateADRDeploymentPackages){
                         }
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to change the the deployment package for the '$($AutomaticDeploymentRule.Name)' automatic deployment rule to '$($CorrectDeploymentPackageName)'." $component 3
-                        Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                     }
                 }
