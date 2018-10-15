@@ -84,7 +84,7 @@ Version 2.4 ##/##/##
     Added a new parameter called UseCustomIndexes which will create custom indexes to the WSUS database that increases performance and helps fix Cleanup Wizard timeouts.
     Added a new parameter called RemoveCustomIndexes which will remove the custom indexes.
     Delete declined updates older than twice the Exclusion period using WSUS API.
-    FirstRun: Increase timeout to 24 hours and try to get et titles for obsolete updates.
+    FirstRun: Increase timeout to 24 hours and try to get titles for obsolete updates.
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
 .LINK
