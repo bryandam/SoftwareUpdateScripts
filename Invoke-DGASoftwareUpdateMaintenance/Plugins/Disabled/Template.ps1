@@ -5,16 +5,18 @@ Enter your synopsis here.
 Provide a more full description here.
 .NOTES
 Written By: 
-Version X.X: 10/28/17
+Version 1.0: 10/28/17
+Version 1.1: 08/31/18
 #>
 
 Function Invoke-SelectUpdatesPlugin{
 
-
-    $DeclinedUpdates = @{}
+    $DeclineUpdates = @{}
+    
+    $UpdatesIMightHate = ($ActiveUpdates | Where {$_.Title -ilike '%Du.Du hast.Du hast mich%'})
     
     #Enter all your fun logic to add updates to the hashtable.
-    #$DeclinedUpdates.Set_Item($Update.Id.UpdateId,"Reason for Declining")
+    #$DeclineUpdates.Set_Item($Update.Id.UpdateId,"Reason for Declining")
 
-    Return $DeclinedUpdates
+    Return $DeclineUpdates
 }
