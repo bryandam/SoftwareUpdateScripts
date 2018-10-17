@@ -1183,7 +1183,7 @@ If ($UseCustomIndexes){
 		ForEach ($TableName in $IndexArray.Keys){
 
 			#Determine if the index exists and create it if not.
-			$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+			$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
 
 			#If the index doesn't exist then create it.
 			If($Index.Rows.Count -eq 0 ){
@@ -1192,10 +1192,10 @@ If ($UseCustomIndexes){
 				If (!$WhatIfPreference){
 
 					#Add the index.
-					$Index = Invoke-SQLCMD $SqlConnection "CREATE NONCLUSTERED INDEX IX_DGA_$TableName ON $TableName($($IndexArray[$TableName]))"
+					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);CREATE NONCLUSTERED INDEX IX_DGA_$TableName ON $TableName($($IndexArray[$TableName]))"
 
 					#Verify that the index exists now.
-					$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
 					If($Index.Rows.Count -eq 0 ){
 						Add-TextToCMLog $LogFile "Failed to create the index IX_DGA_$TableName." $component 2
 						$FailedIndex = $True
@@ -1239,7 +1239,7 @@ If ($RemoveCustomIndexes){
 		ForEach ($TableName in $IndexArray.Keys){
 
 			#Determine if the index exists.
-			$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+			$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
 
 			#If the index exists then remove it.
 			If($Index.Rows.Count -gt 0 ){
@@ -1248,10 +1248,10 @@ If ($RemoveCustomIndexes){
 				If (!$WhatIfPreference){
 
 					#Remove the index.
-					$Index = Invoke-SQLCMD $SqlConnection "DROP INDEX IX_DGA_$TableName ON $TableName"
+					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);DROP INDEX IX_DGA_$TableName ON $TableName"
 
 					#Verify that the index no longer exists.
-					$Index = Invoke-SQLCMD $SqlConnection "SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
 					If($Index.Rows.Count -gt 0 ){
 						Add-TextToCMLog $LogFile "Failed to remove the index IX_DGA_$TableName." $component 2
 						$FailedIndex = $True
@@ -1319,7 +1319,7 @@ If($FirstRun){
 
 			Add-TextToCMLog $LogFile "Attempting to delete update '$($UpdateTitle)' ($($LocalUpdateId)) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
 			If (!($WhatIfPreference)){
-				Invoke-SQLCMD $SqlConnection "spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"
+				Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);exec spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"
 			}
 		}
 
