@@ -1366,8 +1366,8 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
         Invoke-CMSyncCheck
     }
 
-    #Load the dat file in order to mark the start of the script.
-    $datFilePath = "filesystem::$(Join-Path $scriptPath "$($WSUSServerDB.ServerName.Split('.')[0])_$($WSUSServerDB.DatabaseName).dat")".ToLower()
+    #Load the dat file.
+    $datFilePath = "filesystem::$(Join-Path $scriptPath 'updatemaint.dat')"
     [Hashtable]$DeclinedUpdateData = @{}
     If (Test-Path $datFilePath){[Hashtable]$DeclinedUpdateData = Import-Clixml -Path $datFilePath}
     Add-TextToCMLog $LogFile "Loaded $($DeclinedUpdateData.Count) declined updates from the data file $datFilePath." $component 1
@@ -1409,9 +1409,9 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
    #If deleting declined updates.
     If ($DeleteDeclined){
-        $ExclusionDateDelete = (Get-Date).AddMonths($ExclusionPeriod * -2)
+        $ExclusionDateDelete = (Get-Date).AddMonths($ExclusionPeriod * -1)
 
-        Add-TextToCMLog $LogFile "Deleting declined updates created before $ExclusionDateDelete." $component 1
+        Add-TextToCMLog $LogFile "Deleting updates declined before $ExclusionDateDelete." $component 1
 
         #Loop through declined updates.
         ForEach ($Update in $DeclinedUpdates) {
@@ -1436,7 +1436,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
     #If using the built-in logic for declining superseded updates.
     If($DeclineSuperseded){
-        Add-TextToCMLog $LogFile "Declining superseded updates created before $ExclusionDate." $component 1
+        Add-TextToCMLog $LogFile "Declining updates superseded before $ExclusionDate." $component 1
 
         #Loop through updates and add those that match the user's criteria to the hash.
         ForEach ($Update in $ActiveUpdates) {
