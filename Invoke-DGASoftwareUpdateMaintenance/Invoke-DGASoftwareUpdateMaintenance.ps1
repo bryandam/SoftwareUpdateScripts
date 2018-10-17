@@ -184,7 +184,7 @@ Param(
     #Combine software updates groups into yearly groups leaving only the provided number of groups.
     [Parameter(ParameterSetName='cmdline')]
     [Parameter( HelpMessage="A number greater than zero.")]
-    [ValidateRange(1,[int]::MaxValue)]
+    [ValidateScript({$_ -gt 0})]
     [int]$CombineSUGs,
 
     #A list of update title searches and the maximum runtime to set those updates to.
