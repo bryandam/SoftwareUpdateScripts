@@ -848,13 +848,17 @@ If ($ConfigFile){
                     $Data[1]=$Data[1].Trim()
                 }
                 #Try to evaluate the value as an expression otherwise use the value as-is.
+		Write-Verbose -Message "trying to Set Variable [$($Data[0])] to [$($Data[1])]"
                 Try{
                     If ($Data[0] -eq 'SiteCode') { #force a numeric SiteCode to be a string
-                        Set-Variable -Name $Data[0] -Value $(Invoke-Expression [string]$Data[1]) -Force -WhatIf:$False
-                    } else {
+                        Set-Variable -Name $Data[0] -Value ($Data[1] -as [string]) -Force -WhatIf:$False
+                    } ElseIf ($Data[1] -match "^@.") {
                         Set-Variable -Name $Data[0] -Value (Invoke-Expression $Data[1]) -Force -WhatIf:$False
-                    }
-                }
+                    } ElseIf ($Data[1] -match "\d") {
+                        Set-Variable -Name $Data[0] -Value ($Data[1] -as [int]) -Force -WhatIf:$False
+                    } Else {
+                        Set-Variable -Name $Data[0] -Value ($Data[1] -as [string]) -Force -WhatIf:$False
+                    }                }
                 Catch{
                     Set-Variable -Name $Data[0] -Value $Data[1] -Force -WhatIf:$False
                 }
@@ -862,8 +866,7 @@ If ($ConfigFile){
             ElseIf ($Data.Count -eq 1) {
                 Set-Variable -Name $Data[0] -Value $True -Force -WhatIf:$False
             }
-
-            Write-Verbose "Parameter $((Get-Variable $Data[0]).Name) is set to $((Get-Variable $Data[0]).Value)"
+            Write-Verbose "Parameter $((Get-Variable $Data[0]).Name) is set to $((Get-Variable $Data[0]).Value) and is of [$($((Get-Variable $Data[0]).Value.GetType()))] type."
         }
     }
     Else{
