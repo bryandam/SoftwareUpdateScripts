@@ -46,7 +46,7 @@ Function Invoke-SelectUpdatesPlugin{
         }
 
         #If none of the defined languages were found then decline the update.
-        If (! $LanguageFound -and (! (Test-Exlusions $Update))){            
+        If (! $LanguageFound -and (! (Test-Exclusions $Update))){            
             $DeclineUpdates.Set_Item($Update.Id.UpdateId,"Windows 10 Language: $($Update.GetSupportedUpdateLanguages())")
         }
     }
