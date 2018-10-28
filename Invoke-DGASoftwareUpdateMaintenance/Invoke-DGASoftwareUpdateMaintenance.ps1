@@ -69,7 +69,7 @@ Version 2.3  06/25/18
     Fixed my merge screw up that reverted to an earlier version that did not have the stand-alone WSUS feature.
     Using WhatIf will force the script to run regardless of the 24-hour timeout.
     Make DeclineByTitle explicitly case-insensitive.
-Version 2.4 ##/##/##
+Version 2.4 10/17/18
     In WhatIf mode don't check sync status when declining updates for performance reasons.
     In WhatIf mode don't write the last ran file.
     Added ExcludeByTitle, ExcludeByProduct, and IncludeByProduct options.
@@ -85,6 +85,9 @@ Version 2.4 ##/##/##
     Added a new parameter called RemoveCustomIndexes which will remove the custom indexes.
     Delete declined updates older than twice the Exclusion period using WSUS API.
     FirstRun: Increase timeout to 24 hours and try to get titles for obsolete updates.
+Version 2.4.1
+    Fix an issue with handling config file parameters (Chad Simmons)
+    Uploaded the correct plugins this time.  Maybe.
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
 .LINK
@@ -787,7 +790,7 @@ Function Invoke-SQLCMD{
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4"
+$scriptVersion = "2.4.1"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $IndexArray = @{

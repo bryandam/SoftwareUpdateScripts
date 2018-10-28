@@ -42,7 +42,7 @@ Function Invoke-SelectUpdatesPlugin{
         }
         
         #If one of the supported editions was found then skip to the next update.
-        If($EditionFound -or (Test-Exlusions $Update)){
+        If($EditionFound -or (Test-Exclusions $Update)){
             Continue #Skip to the next update.
         } Else {
             $DeclineUpdates.Set_Item($Update.Id.UpdateId,"Windows 10 Edition")

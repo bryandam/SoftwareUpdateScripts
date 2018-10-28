@@ -15,8 +15,16 @@ Function Invoke-SelectUpdatesPlugin{
     
     $UpdatesIMightHate = ($ActiveUpdates | Where {$_.Title -ilike '%Du.Du hast.Du hast mich%'})
     
-    #Enter all your fun logic to add updates to the hashtable.
-    #$DeclineUpdates.Set_Item($Update.Id.UpdateId,"Reason for Declining")
+    #Loop through the updates.
+    ForEach ($Update in $UpdatesIMightHate){
+
+        #Verify that the updates aren't being excluded.
+        If (!Test-Exclusions $Update){
+
+            #Enter all your fun logic to add updates to the hashtable.
+            #$DeclineUpdates.Set_Item($Update.Id.UpdateId,"Reason for Declining")
+        }
+    }
 
     Return $DeclineUpdates
 }
