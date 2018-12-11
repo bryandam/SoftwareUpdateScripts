@@ -857,7 +857,7 @@ If ($ConfigFile){
                         Set-Variable -Name $Data[0] -Value ($Data[1] -as [string]) -Force -WhatIf:$False
                     } ElseIf ($Data[1] -match "^@.") {
                         Set-Variable -Name $Data[0] -Value (Invoke-Expression $Data[1]) -Force -WhatIf:$False
-                    } ElseIf ($Data[1] -match "\d") {
+                    } ElseIf ($Data[1] -match "^[0-9]*$") { #case where entire value is numeric
                         Set-Variable -Name $Data[0] -Value ($Data[1] -as [int]) -Force -WhatIf:$False
                     } Else {
                         Set-Variable -Name $Data[0] -Value ($Data[1] -as [string]) -Force -WhatIf:$False
