@@ -1,4 +1,19 @@
 ﻿<#
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#>
+
+<#
 .SYNOPSIS
 Maintain Software Updates in System Center Configuration Manager.
 .DESCRIPTION
@@ -88,16 +103,21 @@ Version 2.4 10/17/18
 Version 2.4.1
     Fix an issue with handling config file parameters (Chad Simmons)
     Uploaded the correct plugins this time.  Maybe.
+Version 2.4.2
+    Fix another issue with handling config file parameters (Chad Simmons)
+    Added license information.
+Version 2.4.3
+    Fix config_wsus_standalone configuration file.
+    Remove check for WSUS cmdlets to support Server 2008 R2 (sigh ... for real people?!)
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
 .LINK
 http://www.damgoodadmin.com
-#>
 
+#>
 
 [CmdletBinding(SupportsShouldProcess=$True,DefaultParameterSetName="configfile")]
 Param(
-
     #Connect to the WSUS database directly and use the built in stored procedures to delete obsolete updates.
     [Parameter(ParameterSetName='cmdline')]
     [switch] $FirstRun,
@@ -790,7 +810,7 @@ Function Invoke-SQLCMD{
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.1"
+$scriptVersion = "2.4.3"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $IndexArray = @{
@@ -1000,12 +1020,6 @@ If ($MaxUpdateRuntime){
 
 #Change the directory to the site location.
 $OriginalLocation = Get-Location
-
-#If the UpdateServices module doesn't exist then exit.
-If (!(Get-Module -ListAvailable -Name 'UpdateServices')) {
-    Add-TextToCMLog $LogFile "The Update Services module was not found.  Please make sure that WSUS Admin Console is installed on this machine" $component 3
-    Return
-}
 
 #Try to load the UpdateServices module.
 #NOTE: I initially tried using the WSUS Powershell module but it was exponentially slower than the API calls.  Instead of a seconds it took hours to get the update list.
