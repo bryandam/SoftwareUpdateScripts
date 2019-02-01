@@ -109,6 +109,8 @@ Version 2.4.2
 Version 2.4.3
     Fix config_wsus_standalone configuration file.
     Remove check for WSUS cmdlets to support Server 2008 R2 (sigh ... for real people?!)
+Version 2.4.4
+    Fix parsing of ADR/SUGs with non-alphanumeric characters. [Cato]
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
 .LINK
@@ -810,7 +812,7 @@ Function Invoke-SQLCMD{
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.3"
+$scriptVersion = "2.4.4"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $IndexArray = @{
@@ -1843,7 +1845,7 @@ If ($CombineSUGs){
 
         #Get a list of SUGS sorted by descending creation date where the name matches the ADR and has a date.
         #This is an attempt the match ADRS to SUGs.  While the SUG object has an AssociatedAutoRuleID property it is removed if the ADR is modified in any way.
-        $ADRSUGs = $SoftwareUpdateGroups | Where {$_.LocalizedDisplayName -match "$($AutomaticDeploymentRule.Name) \d\d\d\d-\d\d-\d\d"} | Sort-Object DateCreated -Descending
+        $ADRSUGs =  $SoftwareUpdateGroups | Where {$_.LocalizedDisplayName -match "$([regex]::Escape($AutomaticDeploymentRule.Name)) \d\d\d\d-\d\d-\d\d"} | Sort-Object DateCreated -Descending
 
         #If there are more SUGS than the user wants, then add them to the yearly SUG.
         If ($ADRSUGs.Count -gt $CombineSUGs) {
