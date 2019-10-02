@@ -45,7 +45,7 @@ Function Add-TextToCMLog {
 ##########################################################################################################
 <#
 .SYNOPSIS
-   Log to a file in a format that can be read by Trace32.exe / CMTrace.exe 
+   Log to a file in a format that can be read by Trace32.exe / CMTrace.exe
 
 .DESCRIPTION
    Write a line of data to a script log file in a format that can be parsed by Trace32.exe / CMTrace.exe
@@ -67,7 +67,7 @@ Function Add-TextToCMLog {
    Add-TextToCMLog c:\output\update.log "Application of MS15-031 failed" Apply_Patch 3
 
    This will write a line to the update.log file in c:\output stating that "Application of MS15-031 failed".
-   The source component will be Apply_Patch and the line will be highlighted in red as it is an error 
+   The source component will be Apply_Patch and the line will be highlighted in red as it is an error
    (severity - 3).
 
 #>
@@ -96,7 +96,7 @@ Param(
 
 
 #Obtain UTC offset
-$DateTime = New-Object -ComObject WbemScripting.SWbemDateTime 
+$DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
 $DateTime.SetVarDate($(Get-Date))
 $UtcValue = $DateTime.Value
 $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
@@ -148,7 +148,7 @@ ForEach ($status in $SyncStatus){
                 'WSUSServerName'=$status.WSUSServerName;
                 'WSUSSourceServer'=$status.WSUSSourceServer}
 
-    $Results+= New-Object –TypeName PSObject –Prop $properties
+    $Results+= New-Object ï¿½TypeName PSObject ï¿½Prop $properties
 }
 
 
@@ -180,24 +180,37 @@ Function Invoke-SyncCheck {
 
     $WaitInterval = 0 #Used to skip the initial wait cycle if it isn't necessary.
     Do{
-    
+
         #Wait until the loop has iterated once.
         If ($WaitInterval -gt 0){
             Add-TextToCMLog $LogFile "Waiting $TimeToWait minutes for lead time to pass before executing." $component 1
-            Start-Sleep -Seconds ($WaitInterval)  
-        }    
+            Start-Sleep -Seconds ($WaitInterval)
+        }
 
         #Loop through each SUP and wait until they are all done syncing.
         Do {
             #If syncronizing then wait.
             If($Syncronizing){
-                Add-TextToCMLog $LogFile "Waiting for software update points to stop syncing." $component 1  
-                Start-Sleep -Seconds (300)  
+                Add-TextToCMLog $LogFile "Waiting for software update points to stop syncing." $component 1
+                Start-Sleep -Seconds (300)
             }
+
+            <#
+            Source: http://eskonr.com/2015/01/download-sccm-configmgr-2012-r2-cu3-status-messages-documentation/
+            6701 = WSUS Synchronization started.
+            6702 = WSUS Synchronization done.
+            6703 = WSUS Synchronization failed.
+            6704 = WSUS Synchronization in progress. Current phase: Synchronizing WSUS Server.
+            6705 = WSUS Synchronization in progress. Current phase: Synchronizing site database.
+            6706 = WSUS Synchronization in progress. Current phase: Synchronizing Internet facing WSUS Server.
+            6707 = Content of WSUS Server %1 is out of sync with upstream server %2.
+            6708 = WSUS synchronization complete, with pending license terms downloads.
+            #>
+            $SynchronizingStatusMessages = @(6701,6704,6705,6706)
 
             $Syncronizing = $False
             ForEach ($softwareUpdatePointSyncStatus in Get-CMSoftwareUpdateSyncStatus){
-                If($softwareUpdatePointSyncStatus.LastSyncState -eq 6704){$Syncronizing = $True}
+                If($softwareUpdatePointSyncStatus.LastSyncState -in $SynchronizingStatusMessages){$Syncronizing = $True}
             }
         } Until(!$Syncronizing)
 
@@ -215,7 +228,7 @@ Function Invoke-SyncCheck {
             }
         }
 
- 
+
         #Calculate the remaining time to wait for the lead time to expire.
         $TimeToWait = ($syncTimeStamp.AddMinutes($SyncLeadTime) - (Get-Date)).Minutes
 
@@ -274,14 +287,14 @@ Function Get-SiteCode {
     }
 
     #If PSDrive exists then get the site code from it.  Otherwise, try to create the drive.
-    If ($PSDriveExists) {        
+    If ($PSDriveExists) {
         $SiteCode = Get-PSDrive -PSProvider CMSite
     } Else {
         #Try to determine the site code if none was passed in.
         If (-Not ($SiteCode) ) {
             If (Test-RegistryValue -Path "HKLM:\SOFTWARE\Microsoft\SMS\Identification" -Value "Site Code"){
                 $SiteCode =  Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\SMS\Identification" | Select-Object -ExpandProperty "Site Code"
-            } ElseIf (Test-RegistryValue -Path "HKLM:\SOFTWARE\Microsoft\SMS\Mobile Client" -Value "AssignedSiteCode") {            
+            } ElseIf (Test-RegistryValue -Path "HKLM:\SOFTWARE\Microsoft\SMS\Mobile Client" -Value "AssignedSiteCode") {
                 $SiteCode =  Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\SMS\Mobile Client" | Select-Object -ExpandProperty "AssignedSiteCode"
             } Else {
                 Return
@@ -303,7 +316,7 @@ $LogFile = "filesystem::$($LogFile)"
 $component = (Split-Path $PSCommandPath -Leaf).Replace(".ps1", "")
 
 #If the log file exists and is larger then the maximum then roll it over.
-If (Test-path  $LogFile -PathType Leaf) {    
+If (Test-path  $LogFile -PathType Leaf) {
     If ((Get-Item $LogFile).length -gt $MaxLogSize){
         Move-Item -Force $LogFile ($LogFile -replace ".$","_") -WhatIf:$False
     }
@@ -323,7 +336,7 @@ If (Test-Path -Path $lastRanPath -NewerThan ((get-date).AddHours(-24).ToString()
 }
 
 #Make sure the last Patch Tuesday was less than a week away.
-If ($WeekOfPatchTuesday){    
+If ($WeekOfPatchTuesday){
     #Care of: http://www.madwithpowershell.com/2014/10/calculating-patch-tuesday-with.html
     $BaseDate = ( Get-Date -Day 12 ).Date
     $PatchTuesday = $BaseDate.AddDays( 2 - [int]$BaseDate.DayOfWeek )
@@ -362,11 +375,11 @@ If (!$SiteCode){$SiteCode = Get-SiteCode}
 If (! (Test-Path "$($SiteCode):")) {
     Try{
         Add-TextToCMLog $LogFile "Trying to create the PS Drive $($SiteCode)" $component 1
-        New-PSDrive -Name $SiteCode -PSProvider CMSite -Root "." -WhatIf:$False | Out-Null   
+        New-PSDrive -Name $SiteCode -PSProvider CMSite -Root "." -WhatIf:$False | Out-Null
     } Catch {
         Add-TextToCMLog $LogFile "The site's PS drive doesn't exist nor could it be created." $component 3
         Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
-        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3    
+        Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
     }
 }
@@ -376,7 +389,7 @@ $OriginalLocation = Get-Location
 
 #Set and verify the location.
 Try{
-    Add-TextToCMLog $LogFile "Connecting to site: $($SiteCode)" $component 1        
+    Add-TextToCMLog $LogFile "Connecting to site: $($SiteCode)" $component 1
     Set-Location "$($SiteCode):"  | Out-Null
 } Catch {
     Add-TextToCMLog $LogFile "Could not set location to site: $($SiteCode)." $component 3
@@ -396,10 +409,8 @@ If ((Get-CMSite).Version -lt $cmSiteVersion){
     Write-Warning "$($ModuleName) requires configuration manager cmdlets $($cmSiteVersion.ToString()) or greater."
 }
 
-Invoke-SyncCheck
-   
 #Try to initiate an update sync.
-Try 
+Try
 {
     Sync-CMSoftwareUpdate -FullSync:$FullSync
     If ($FullSync){
@@ -411,12 +422,12 @@ Try
     If ($Wait){
         Start-Sleep -Seconds 30
         Add-TextToCMLog $LogFile "Initiating a sync check." $component 1
-        Invoke-SyncCheck -SyncLeadTime 0       
+        Invoke-SyncCheck -SyncLeadTime 0
     }
 }
 Catch [System.Exception]
 {
-    Add-TextToCMLog $LogFile "Failed to initiate an update sync.)" $component 3                    
+    Add-TextToCMLog $LogFile "Failed to initiate an update sync.)" $component 3
     Add-TextToCMLog $LogFile "Error: $($_.Exception.Message)" $component 3
     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
 }
