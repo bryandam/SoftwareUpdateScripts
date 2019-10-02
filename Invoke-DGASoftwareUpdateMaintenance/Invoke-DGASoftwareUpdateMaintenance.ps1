@@ -188,7 +188,7 @@ Param(
 
     #Force the script to run even if it was run recently.
     [Parameter(ParameterSetName='cmdline')]
-    
+
     [Parameter(ParameterSetName='configfile')]
     [switch]$Force,
 
@@ -403,9 +403,22 @@ Function Invoke-CMSyncCheck {
                 Start-Sleep -Seconds (300)
             }
 
+            <#
+            Source: http://eskonr.com/2015/01/download-sccm-configmgr-2012-r2-cu3-status-messages-documentation/
+            6701 = WSUS Synchronization started.
+            6702 = WSUS Synchronization done.
+            6703 = WSUS Synchronization failed.
+            6704 = WSUS Synchronization in progress. Current phase: Synchronizing WSUS Server.
+            6705 = WSUS Synchronization in progress. Current phase: Synchronizing site database.
+            6706 = WSUS Synchronization in progress. Current phase: Synchronizing Internet facing WSUS Server.
+            6707 = Content of WSUS Server %1 is out of sync with upstream server %2.
+            6708 = WSUS synchronization complete, with pending license terms downloads.
+            #>
+            $SynchronizingStatusMessages = @(6701,6704,6705,6706)
+
             $Synchronizing = $False
             ForEach ($softwareUpdatePointSyncStatus in Get-CMSoftwareUpdateSyncStatus){
-                If($softwareUpdatePointSyncStatus.LastSyncState -eq 6704){$Synchronizing = $True}
+                If($softwareUpdatePointSyncStatus.LastSyncState -in $SynchronizingStatusMessages){$Synchronizing = $True}
             }
         } Until(!$Synchronizing)
 
@@ -712,7 +725,7 @@ Function Get-WSUSDB{
         Add-TextToCMLog $LogFile "Successfully tested the connection to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 1
     }
     Catch{
-        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3       
+        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3
         Add-TextToCMLog $LogFile "Error ($($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
@@ -941,7 +954,7 @@ If (Test-Path -Path $lastRanPath -NewerThan ((get-date).AddHours(-24).ToString()
     }
 }
 
-#Mark the last time the script ran.  We do this now and at the end to avoid running multiple instances of the script at the same time.	
+#Mark the last time the script ran.  We do this now and at the end to avoid running multiple instances of the script at the same time.
 If (!$WhatIfPreference){Get-Date | Out-File $lastRanPath -Force}
 
 #Check to make sure we're running this on a primary site server that has the SMS namespace.
@@ -1237,7 +1250,7 @@ If ($UseCustomIndexes){
 		#Disconnect from the database.
 		$SqlConnection.Close()
 	} #Connect-WSUSDB
-	
+
 
 }
 
@@ -1319,7 +1332,7 @@ If($FirstRun){
             $LocalUpdateIdRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select UpdateID from tbUpdate Where LocalUpdateID = $($ObsoleteUpdates.Rows[$i][0])"
             If ($LocalUpdateIdRows.Rows.Count -gt 0){
                 $LocalUpdateId = $LocalUpdateIdRows.Rows[0][0]
-                
+
                 $UpdateTitleRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select DefaultTitle from PUBLIC_VIEWS.vUpdate Where UpdateId = '$LocalUpdateId'"
                 If ($UpdateTitleRows.Rows.Count -gt 0){
                     $UpdateTitle = $UpdateTitleRows.Rows[0][0]
@@ -1450,7 +1463,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
             Else{
                 $DeclinedUpdateData.Set_Item($Update.Id.UpdateId,(Get-Date))
             }
-            
+
         } #ForEach DeclinedUpdates
     } #Deletedeclined
 
