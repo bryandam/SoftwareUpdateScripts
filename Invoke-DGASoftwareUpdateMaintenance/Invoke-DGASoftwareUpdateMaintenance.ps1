@@ -889,7 +889,7 @@ Param(
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.5"
+$scriptVersion = "2.4.6"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $IndexArray = @{
