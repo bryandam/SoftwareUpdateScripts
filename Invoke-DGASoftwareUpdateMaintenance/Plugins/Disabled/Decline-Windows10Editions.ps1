@@ -25,6 +25,8 @@ Written By: Bryan Dam
 Version 1.0: 10/28/17
 Version 2.4: 07/20/18
     Added the business and consumer versions to the known edition strings.  Note that this is a licensing distinction, not an OS edition where volume license equals business and everything else, including OEM, is considered consumer.
+Version 2.4.6: 12/20/19
+    Add 1903+ and Insider product categories.
 #>
 
 #Un-comment and add elements to this array for editions you support.  Be sure to add a comma at the end in order to avoid confusion between editions.
@@ -38,7 +40,7 @@ Function Invoke-SelectUpdatesPlugin{
     If (!$SupportedEditions){Return $DeclineUpdates}    
 
 
-    $Windows10Updates = ($ActiveUpdates | Where{$_.ProductTitles.Contains('Windows 10')})
+    $Windows10Updates = $ActiveUpdates | Where{$_.ProductTitles.Contains('Windows 10') -or $_.ProductTitles.Contains('Windows 10, version 1903 and later') -or $_.ProductTitles.Contains('Windows Insider Pre-Release')}
     
     #Loop through the updates and decline any that match the version.
     ForEach ($Update in $Windows10Updates){

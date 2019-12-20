@@ -51,7 +51,7 @@ Function Invoke-SelectUpdatesPlugin{
     
 
     #Get the Windows 10 updates.
-    $Windows10Updates = $ActiveUpdates | Where{($_.ProductTitles.Contains('Windows 10')) -or $_.ProductTitles.Contains('Windows Insider Pre-Release') -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*")}
+    $Windows10Updates = $ActiveUpdates | Where{($_.ProductTitles.Contains('Windows 10')) -or $_.ProductTitles.Contains('Windows 10, version 1903 and later') -or $_.ProductTitles.Contains('Windows Insider Pre-Release') -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*")}
     
     #Loop through the updates and decline any that don't support the defined languages.
     ForEach ($Update in $Windows10Updates){

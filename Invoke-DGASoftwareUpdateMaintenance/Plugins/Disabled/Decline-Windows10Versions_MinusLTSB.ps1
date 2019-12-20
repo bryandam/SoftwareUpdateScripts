@@ -22,6 +22,9 @@ Decline updates for defined versions of Windows 10 except for LTSB.
 You must un-comment the $UnsupportedVersions variable and add the versions your organization does not support.
 Written By: Bryan Dam
 Version 1.0: 7/31/18
+Version 2.4.6: 12/20/19
+    Add 1903+ and Insider product categories.
+
 #>
 
 #Un-comment and add elements to this array for versions you no longer support.
@@ -31,7 +34,7 @@ Function Invoke-SelectUpdatesPlugin{
     $DeclineUpdates = @{}
     If (!$UnsupportedVersions){Return $DeclineUpdates}
 
-    $Windows10Updates = ($ActiveUpdates | Where{((($_.ProductTitles.Contains('Windows 10')) -and (! $_.ProductTitles.Contains('Windows 10 LTSB'))) -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*"))})
+    $Windows10Updates = ($ActiveUpdates | Where{((($_.ProductTitles.Contains('Windows 10') -or $_.ProductTitles.Contains('Windows 10, version 1903 and later') -or $_.ProductTitles.Contains('Windows Insider Pre-Release')) -and (! $_.ProductTitles.Contains('Windows 10 LTSB'))) -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*"))})
     
     #Loop through the updates and decline any that match the version.
     ForEach ($Update in $Windows10Updates){
