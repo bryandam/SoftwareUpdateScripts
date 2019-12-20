@@ -29,6 +29,8 @@ Version 2.0: 04/16/18
     Add support for running against a stand-alone WSUS server.
 Version 2.4: 07/20/18
     Added support for Win 7 and 8.1 in place upgrade updates.
+Version 2.4.6: 12/19/19
+    Include 'Windows Insider Pre-Release' product category to catch new 1909 FUs.
 #>
 
 
@@ -49,7 +51,7 @@ Function Invoke-SelectUpdatesPlugin{
     
 
     #Get the Windows 10 updates.
-    $Windows10Updates = ($ActiveUpdates | Where{(($_.ProductTitles.Contains('Windows 10')) -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*"))})
+    $Windows10Updates = $ActiveUpdates | Where{($_.ProductTitles.Contains('Windows 10')) -or $_.ProductTitles.Contains('Windows Insider Pre-Release') -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*")}
     
     #Loop through the updates and decline any that don't support the defined languages.
     ForEach ($Update in $Windows10Updates){
