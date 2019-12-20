@@ -109,6 +109,14 @@ Version 2.4.2
 Version 2.4.3
     Fix config_wsus_standalone configuration file.
     Remove check for WSUS cmdlets to support Server 2008 R2 (sigh ... for real people?!)
+Version 2.4.4 01/06/19
+    Moved Get-WSUSDB into the features that need it to avoid DB connection issues where a DB isn't needed anyways.
+Version 2.4.5 01/19/19
+    Fix the count of declined superseded udpates.
+    Fix WhatIf handling for UpdateADRDeploymentPackages.
+Version 2.4.6 12/19/2019
+    Improved some WhatIf handling.
+    Added catalog size information.
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
 .LINK
@@ -188,7 +196,7 @@ Param(
 
     #Force the script to run even if it was run recently.
     [Parameter(ParameterSetName='cmdline')]
-
+    
     [Parameter(ParameterSetName='configfile')]
     [switch]$Force,
 
@@ -382,9 +390,14 @@ Function Invoke-CMSyncCheck {
 ##########################################################################################################
     [CmdletBinding()]
     Param(
+    
+        [string] $LogFile = "Invoke-CMSyncCheck.log",
+
         #The number of minutes to wait after the last sync to run the wizard.
         [int]$SyncLeadTime = 5
     )
+
+    $component = "Invoke-CMSyncCheck"
 
     $WaitInterval = 0 #Used to skip the initial wait cycle if it isn't necessary.
     Do{
@@ -403,22 +416,9 @@ Function Invoke-CMSyncCheck {
                 Start-Sleep -Seconds (300)
             }
 
-            <#
-            Source: http://eskonr.com/2015/01/download-sccm-configmgr-2012-r2-cu3-status-messages-documentation/
-            6701 = WSUS Synchronization started.
-            6702 = WSUS Synchronization done.
-            6703 = WSUS Synchronization failed.
-            6704 = WSUS Synchronization in progress. Current phase: Synchronizing WSUS Server.
-            6705 = WSUS Synchronization in progress. Current phase: Synchronizing site database.
-            6706 = WSUS Synchronization in progress. Current phase: Synchronizing Internet facing WSUS Server.
-            6707 = Content of WSUS Server %1 is out of sync with upstream server %2.
-            6708 = WSUS synchronization complete, with pending license terms downloads.
-            #>
-            $SynchronizingStatusMessages = @(6701,6704,6705,6706)
-
             $Synchronizing = $False
             ForEach ($softwareUpdatePointSyncStatus in Get-CMSoftwareUpdateSyncStatus){
-                If($softwareUpdatePointSyncStatus.LastSyncState -in $SynchronizingStatusMessages){$Synchronizing = $True}
+                If($softwareUpdatePointSyncStatus.LastSyncState -eq 6704){$Synchronizing = $True}
             }
         } Until(!$Synchronizing)
 
@@ -438,7 +438,8 @@ Function Invoke-CMSyncCheck {
 
 
         #Calculate the remaining time to wait for the lead time to expire.
-        $TimeToWait = ($syncTimeStamp.AddMinutes($SyncLeadTime) - (Get-Date)).Minutes
+        if ($WhatIfPreference) { $TimeToWait = ($syncTimeStamp.AddMinutes($SyncLeadTime) - (Get-Date)).Minutes }
+        else {$TimeToWait = 0}
 
         #Set the wait interval in seconds for subsequent loops.
         $WaitInterval = 300
@@ -468,9 +469,13 @@ Function Invoke-WSUSSyncCheck {
         [Parameter(Mandatory=$true)]
         [Microsoft.UpdateServices.Administration.IUpdateServer] $WSUSServer,
 
+        [string] $LogFile = "Invoke-WSUSSyncCheck.log",
+
         #The number of minutes to wait after the last sync to run the wizard.
         [int]$SyncLeadTime = 5
     )
+
+    $component = "Invoke-WSUSSyncCheck"
 
     #Get the WSUS subscription.
     Try{
@@ -701,8 +706,11 @@ Function Get-WSUSDB{
 
     Param(
         [Parameter(Mandatory=$true)]
-        [Microsoft.UpdateServices.Administration.IUpdateServer] $WSUSServer
+        [Microsoft.UpdateServices.Administration.IUpdateServer] $WSUSServer,
+        [string] $LogFile ="Get-WSUSDB.log"
     )
+
+    $component = "Get-WSUSDB"
 
     Try{
         $WSUSServerDB = $WSUSServer.GetDatabaseConfiguration()
@@ -725,7 +733,7 @@ Function Get-WSUSDB{
         Add-TextToCMLog $LogFile "Successfully tested the connection to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 1
     }
     Catch{
-        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3
+        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3       
         Add-TextToCMLog $LogFile "Error ($($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
@@ -749,12 +757,18 @@ Function Connect-WSUSDB{
 
     Param(
         [Parameter(Mandatory=$true)]
-        [Microsoft.UpdateServices.Administration.IDatabaseConfiguration] $WSUSServerDB
+        [Microsoft.UpdateServices.Administration.IDatabaseConfiguration] $WSUSServerDB,
+        [string] $LogFile = "Connect-WSUSDB.log"
     )
+
+    $component = "Connect-WSUSDB"
 
     #Determine the connection string based on the type of DB being used.
     If ($WSUSServerDB.IsUsingWindowsInternalDatabase){
-        #Using the Windows Internal Database.  Come one dawg ... just stop this insanity and migrate this to SQL.
+        #Using the Windows Internal Database.
+
+        If (!$StandAloneWSUS){Add-TextToCMLog $LogFile "Windows Internal Database? Fer real? Come one dawg ... just stop this insanity and migrate this to your ConfigMgr SQL instance." $component 2}
+
         If($WSUSServerDB.ServerName -eq "MICROSOFT##WID"){
             $SqlConnectionString = "Data Source=\\.\pipe\MICROSOFT##WID\tsql\query;Integrated Security=True;Network Library=dbnmpntw"
         }
@@ -800,8 +814,12 @@ Function Invoke-SQLCMD{
         [System.Data.SqlClient.SqlConnection] $SqlConnection,
 
         [Parameter(Mandatory=$true)]
-        [string] $SqlCommand
+        [string] $SqlCommand,
+
+        [string] $LogFile = "Invoke-SQLCMD.log"
     )
+
+    $component = "Invoke-SQLCMD"
 
     Try{
         $SqlCmd = $SqlConnection.CreateCommand()
@@ -820,10 +838,58 @@ Function Invoke-SQLCMD{
     }
 }
 
+Function Get-CatalogInfo{
+##########################################################################################################
+<#
+.SYNOPSIS
+   Get information about the WSUS catalog.
+
+.DESCRIPTION
+   Returns information about the WSUS catalog as a datatable including number of updates and both compressed and uncompressed XML size.
+
+#>
+
+[OutputType([System.Data.DataTable])]
+Param(
+    [Parameter(Mandatory=$true)]
+    [System.Data.SqlClient.SqlConnection] $SqlConnection,
+    [Parameter(Mandatory=$true)]
+    [string] $SUSDbName,
+    [string] $LogFile = "Get-CatalogInfo.log"
+    )
+
+    $query = "
+            Use $SUSDbName;
+            ;with cte as​
+            (​
+                SELECT dbo.tbXml.RevisionID, ISNULL(datalength(dbo.tbXml.RootElementXml), 0) as Uncompressed, ISNULL(datalength(dbo.tbXml.RootElementXmlCompressed), 0) as Compressed FROM dbo.tbXml​
+                INNER  JOIN dbo.tbProperty ON dbo.tbXml.RevisionID = dbo.tbProperty.RevisionID​
+            )​
+
+            Select​
+              Count(Distinct(u.LocalUpdateId)) As [UpdateCount],​
+              SUM(cte.Uncompressed) /1048576 as [CatalogSize_MB],​
+              SUM(cte.Compressed) /1048576 as [CompressedCatalogSize_MB]​
+            From tbUpdate u​
+              inner join tbRevision r on u.LocalUpdateID = r.LocalUpdateID​
+              inner join tbProperty pr on pr.RevisionID = r.RevisionID​
+              inner join cte on cte.revisionid = r.revisionid​
+            where r.RevisionID in​
+            (​
+                Select  t1.RevisionID​
+                From tbBundleAll t1​
+                Inner Join tbBundleAtLeastOne t2​
+                On t1.BundledID=t2.BundledID​
+                Where ishidden=0 and pr.ExplicitlyDeployable=1​
+            )
+    "
+
+    return Invoke-SQLCMD $SqlConnection $query $LogFile
+}
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.3"
+$scriptVersion = "2.4.5"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $IndexArray = @{
@@ -954,7 +1020,7 @@ If (Test-Path -Path $lastRanPath -NewerThan ((get-date).AddHours(-24).ToString()
     }
 }
 
-#Mark the last time the script ran.  We do this now and at the end to avoid running multiple instances of the script at the same time.
+#Mark the last time the script ran.  We do this now and at the end to avoid running multiple instances of the script at the same time.	
 If (!$WhatIfPreference){Get-Date | Out-File $lastRanPath -Force}
 
 #Check to make sure we're running this on a primary site server that has the SMS namespace.
@@ -1190,20 +1256,20 @@ If ($WSUSServer -eq $null) {
 
 Add-TextToCMLog $LogFile "Connected to WSUS server $WSUSFQDN." $component 1
 
-$WSUSServerDB = Get-WSUSDB $WSUSServer
-If(!$WSUSServerDB)
-{
-	Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
-    Set-Location $OriginalLocation
-    Return
-}
-
 #If the user has chosen to add custom indexes to the WSUS database.
 If ($UseCustomIndexes){
 
 	Add-TextToCMLog $LogFile "User selected AddIndex. Will try to verify indexes and create where necessary." $component 1
 
-	$SqlConnection = Connect-WSUSDB $WSUSServerDB
+    $WSUSServerDB = Get-WSUSDB $WSUSServer $LogFile
+    If(!$WSUSServerDB)
+    {
+	    Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+        Set-Location $OriginalLocation
+        Return
+    }
+
+	$SqlConnection = Connect-WSUSDB $WSUSServerDB $LogFile
 
     If(!$SqlConnection)
     {
@@ -1216,7 +1282,7 @@ If ($UseCustomIndexes){
 		ForEach ($TableName in $IndexArray.Keys){
 
 			#Determine if the index exists and create it if not.
-			$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+			$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')" $LogFile
 
 			#If the index doesn't exist then create it.
 			If($Index.Rows.Count -eq 0 ){
@@ -1225,10 +1291,10 @@ If ($UseCustomIndexes){
 				If (!$WhatIfPreference){
 
 					#Add the index.
-					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);CREATE NONCLUSTERED INDEX IX_DGA_$TableName ON $TableName($($IndexArray[$TableName]))"
+					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);CREATE NONCLUSTERED INDEX IX_DGA_$TableName ON $TableName($($IndexArray[$TableName]))"  $LogFile
 
 					#Verify that the index exists now.
-					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"  $LogFile
 					If($Index.Rows.Count -eq 0 ){
 						Add-TextToCMLog $LogFile "Failed to create the index IX_DGA_$TableName." $component 2
 						$FailedIndex = $True
@@ -1250,7 +1316,7 @@ If ($UseCustomIndexes){
 		#Disconnect from the database.
 		$SqlConnection.Close()
 	} #Connect-WSUSDB
-
+	
 
 }
 
@@ -1259,7 +1325,15 @@ If ($RemoveCustomIndexes){
 
 	Add-TextToCMLog $LogFile "User selected RemoveCustomIndexes. Will try to remove the custom indexes." $component 1
 
-	$SqlConnection = Connect-WSUSDB $WSUSServerDB
+    $WSUSServerDB = Get-WSUSDB $WSUSServer $LogFile
+    If(!$WSUSServerDB)
+    {
+	    Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+        Set-Location $OriginalLocation
+        Return
+    }
+
+	$SqlConnection = Connect-WSUSDB $WSUSServerDB $LogFile
 
     If(!$SqlConnection)
     {
@@ -1272,7 +1346,7 @@ If ($RemoveCustomIndexes){
 		ForEach ($TableName in $IndexArray.Keys){
 
 			#Determine if the index exists.
-			$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+			$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"  $LogFile
 
 			#If the index exists then remove it.
 			If($Index.Rows.Count -gt 0 ){
@@ -1281,10 +1355,10 @@ If ($RemoveCustomIndexes){
 				If (!$WhatIfPreference){
 
 					#Remove the index.
-					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);DROP INDEX IX_DGA_$TableName ON $TableName"
+					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);DROP INDEX IX_DGA_$TableName ON $TableName"  $LogFile
 
 					#Verify that the index no longer exists.
-					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"
+					$Index = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);SELECT * FROM sys.indexes WHERE name='IX_DGA_$TableName' AND object_id = OBJECT_ID('$TableName')"  $LogFile
 					If($Index.Rows.Count -gt 0 ){
 						Add-TextToCMLog $LogFile "Failed to remove the index IX_DGA_$TableName." $component 2
 						$FailedIndex = $True
@@ -1315,25 +1389,33 @@ If($FirstRun){
 
 	If (!$UseCustomIndexes){Add-TextToCMLog $LogFile "You have chosen not to use the UseCustomIndexes feature.  While the custom indexes are not suported by Microsoft the update deletion process can be painfully slow and it is recommended that you use them." $component 2}
 
-	$SqlConnection = Connect-WSUSDB $WSUSServerDB
+    $WSUSServerDB = Get-WSUSDB $WSUSServer $LogFile
+    If(!$WSUSServerDB)
+    {
+	    Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+        Set-Location $OriginalLocation
+        Return
+    }
+
+	$SqlConnection = Connect-WSUSDB $WSUSServerDB $LogFile
 
     If(!$SqlConnection)
     {
 		Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 1
     }
     Else{
-		$ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);exec spGetObsoleteUpdatesToCleanup"
+		$ObsoleteUpdates = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);exec spGetObsoleteUpdatesToCleanup"  $LogFile
 		Add-TextToCMLog $LogFile "Found $($ObsoleteUpdates.Rows.Count) obsolete updates to delete." $component 1
 
 		#Loop through each result and delete
 		If ($WhatIfPreference) {Add-TextToCMLog $LogFile "The WhatIf parameter was sent.  No obsolete updates will actually be deleted." $component 2}
         For ($i=0; $i -lt $ObsoleteUpdates.Rows.Count; $i++){
             #Get the update details.  This is done per-update to avoid any joins across large sets of data.  A poorly maintained SUSDB doens't like those.  Not one bit.
-            $LocalUpdateIdRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select UpdateID from tbUpdate Where LocalUpdateID = $($ObsoleteUpdates.Rows[$i][0])"
+            $LocalUpdateIdRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select UpdateID from tbUpdate Where LocalUpdateID = $($ObsoleteUpdates.Rows[$i][0])"  $LogFile
             If ($LocalUpdateIdRows.Rows.Count -gt 0){
                 $LocalUpdateId = $LocalUpdateIdRows.Rows[0][0]
-
-                $UpdateTitleRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select DefaultTitle from PUBLIC_VIEWS.vUpdate Where UpdateId = '$LocalUpdateId'"
+                
+                $UpdateTitleRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select DefaultTitle from PUBLIC_VIEWS.vUpdate Where UpdateId = '$LocalUpdateId'"  $LogFile
                 If ($UpdateTitleRows.Rows.Count -gt 0){
                     $UpdateTitle = $UpdateTitleRows.Rows[0][0]
                 }
@@ -1352,7 +1434,7 @@ If($FirstRun){
 
 			Add-TextToCMLog $LogFile "Attempting to delete update '$($UpdateTitle)' ($($LocalUpdateId)) ($($i + 1)/$($($ObsoleteUpdates.Rows.Count)))." $component 1
 			If (!($WhatIfPreference)){
-				Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);exec spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"
+				Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);exec spDeleteUpdate '$($ObsoleteUpdates.Rows[$i][0])'"  $LogFile
 			}
 		}
 
@@ -1371,10 +1453,10 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
     #Check the sync status.
     If ($StandAloneWSUS){
-        Invoke-WSUSSyncCheck $WSUSServer
+        Invoke-WSUSSyncCheck $WSUSServer $LogFile
     }
     Else{
-        Invoke-CMSyncCheck
+        Invoke-CMSyncCheck $LogFile
     }
 
     #Get a collection of all updates.
@@ -1393,10 +1475,10 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
     #Check the sync status.
     If ($StandAloneWSUS){
-        Invoke-WSUSSyncCheck $WSUSServer
+        Invoke-WSUSSyncCheck $WSUSServer $LogFile
     }
     Else{
-        Invoke-CMSyncCheck
+        Invoke-CMSyncCheck $LogFile
     }
 
     #Load the dat file.
@@ -1410,6 +1492,15 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     $DeclinedUpdates = $AllUpdates | Where-Object {$_.IsDeclined -eq $True}
     $ActiveUpdates = $AllUpdates | Where-Object {$_.IsDeclined -eq $False}
 
+    #Estimate catalog size
+    $CatalogInfo = Get-CatalogInfo $SqlConnection $($WSUSServerDB.DatabaseName) $LogFile	
+    $InitialCatlogSize="Unknown"
+    $InitialCatlogSizeCompressed="Unknown"
+    If($CatalogInfo.Rows.Count -gt 0 ){
+        $InitialCatlogSize=$CatalogInfo.Rows[0].CatalogSize_MB
+        $InitialCatlogSizeCompressed=$CatalogInfo.Rows[0].CompressedCatalogSize_MB
+    }
+
     #Initialize count variables.
     $i = 0
     $countDeleted = 0
@@ -1421,10 +1512,8 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     $countDeclinedByTitleResults = @{}
     $countDeclinedByPlugin = 0
     $countDeclinedByPluginResults = @{}
-    ForEach ($SearchString In $DeclineByTitle){$countDeclinedByTitleResults[$SearchString]=0}
-
-
-
+    ForEach ($SearchString In $DeclineByTitle){$countDeclinedByTitleResults[$SearchString]=0}    
+    
     #If no exclusion period was given then use the supersedence configuration of the SUP Component to calculate the exclusion date.
     If ($ExclusionPeriod -eq $null){
 
@@ -1463,7 +1552,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
             Else{
                 $DeclinedUpdateData.Set_Item($Update.Id.UpdateId,(Get-Date))
             }
-
+            
         } #ForEach DeclinedUpdates
     } #Deletedeclined
 
@@ -1493,6 +1582,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                             #Add the update to the hash and count the number of superseded updates we decline.
                             $UpdatesToDecline.Set_Item($Update.Id.UpdateId,"Superseded")
                             $countDeclinedSuperseded++
+                            break
                         }
                     }
                 }
@@ -1528,10 +1618,10 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
         #Check the sync status.
         If ($StandAloneWSUS){
-            Invoke-WSUSSyncCheck $WSUSServer
+            Invoke-WSUSSyncCheck $WSUSServer $LogFile
         }
         Else{
-            Invoke-CMSyncCheck
+            Invoke-CMSyncCheck $LogFile
         }
 
         #Make sure the plugin folder exists.
@@ -1625,10 +1715,10 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
                         #Check the sync status.
                         If ($StandAloneWSUS){
-                            Invoke-WSUSSyncCheck $WSUSServer
+                            Invoke-WSUSSyncCheck $WSUSServer $LogFile
                         }
                         Else{
-                            Invoke-CMSyncCheck
+                            Invoke-CMSyncCheck $LogFile
                         }
                     }
 
@@ -1669,12 +1759,20 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
     }
 
+    #Restimate catalog size
+    $NewCatalogInfo = Get-CatalogInfo $SqlConnection $($WSUSServerDB.DatabaseName) $LogFile	
+    If($NewCatalogInfo.Rows.Count -gt 0 ){
+        $InitialCatlogSize=$NewCatalogInfo.Rows[0].CatalogSize_MB
+        $InitialCatlogSizeCompressed=$NewCatalogInfo.Rows[0].CompressedCatalogSize_MB
+    }
+
     #Write the summary information.
     If ($UpdateListOutputFile){Add-TextToCMLog $LogFile "List of declined updates: $UpdateListOutputFile" $component 1}
     If ($WhatIfPreference){ Add-TextToCMLog $LogFile "NOTE: The WhatIf flag was given so the below summary shows what would have happened.  No changes were made." $component 2}
     Add-TextToCMLog $LogFile "Summary:"  $component 1
     Add-TextToCMLog $LogFile "========" $component 1
 
+    Add-TextToCMLog $LogFile "Initial Catalog Size = $InitialCatlogSize MB ($InitialCatlogSizeCompressed MB Compressed )" $component 1    
     Add-TextToCMLog $LogFile "All Updates = $($AllUpdates.Count)" $component 1
     Add-TextToCMLog $LogFile "All Declined Updates = $($DeclinedUpdates.Count)"   $component 1
     Add-TextToCMLog $LogFile "All Updates Except Declined = $($ActiveUpdates.Count)"   $component 1
@@ -1700,6 +1798,9 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     If($DeleteDeclined){Add-TextToCMLog $LogFile "Total Newly Deleted Updates = $countDeleted"  $component 1}
     Add-TextToCMLog $LogFile "Total Active Updates = $($AllUpdates.Count - $DeclinedUpdates.Count - $countNewlyDeclined)"  $component 1
     Add-TextToCMLog $LogFile "Total Updates = $($AllUpdates.Count - $countNewlyDeleted)"  $component 1
+    If($NewCatalogInfo.Rows.Count -gt 0 ){
+        Add-TextToCMLog $LogFile "Initial Catalog Size = $($NewCatalogInfo.Rows[0].CatalogSize_MB) MB ($($NewCatalogInfo.Rows[0].CompressedCatalogSize_MB) MB Compressed )" $component 1  
+    }
     Add-TextToCMLog $LogFile "========" $component 1
 
     #Save the declined update data.
@@ -1714,10 +1815,10 @@ Try{
 
         #Check the sync status.
         If ($StandAloneWSUS){
-            Invoke-WSUSSyncCheck $WSUSServer
+            Invoke-WSUSSyncCheck $WSUSServer $LogFile
         }
         Else{
-            Invoke-CMSyncCheck
+            Invoke-CMSyncCheck $LogFile
         }
 
         Add-TextToCMLog $LogFile "Starting the WSUS cleanup wizard."   $component 1
@@ -1736,7 +1837,7 @@ Try{
             $cleanupResults = $cleanupManager.PerformCleanup($cleanupScope);
 
             Add-TextToCMLog $LogFile "WSUS cleanup wizard has finished successfully:" $component 1
-            Add-TextToCMLog $LogFile "    Disk Space Freed: $($cleanupResults.DiskSpaceFreed)." $component 1
+            Add-TextToCMLog $LogFile "    Disk Space Freed (bytes): $($cleanupResults.DiskSpaceFreed)." $component 1
             Add-TextToCMLog $LogFile "    Expired Updates Declined: $($cleanupResults.ExpiredUpdatesDeclined)." $component 1
             Add-TextToCMLog $LogFile "    Obsolete Computers Deleted: $($cleanupResults.ObsoleteComputersDeleted)." $component 1
             Add-TextToCMLog $LogFile "    Obsolete Updates Deleted: $($cleanupResults.ObsoleteUpdatesDeleted)." $component 1
@@ -1758,7 +1859,7 @@ catch [System.Exception]
 #By resyncing before cleaning the SUGs we can be certain to catch any newly declined/expired updates.
 If ($ReSyncUpdates){
 
-    Invoke-CMSyncCheck
+    Invoke-CMSyncCheck $LogFile
 
     #Try to initiate an update sync.
     Try
@@ -1766,7 +1867,7 @@ If ($ReSyncUpdates){
         If(!$WhatIfPreference){Sync-CMSoftwareUpdate -FullSync $True}
         Add-TextToCMLog $LogFile "Initiated a full software update sync and waiting one minute for it to start." $component 1
         If (!$WhatIfPreference) {Start-Sleep -Seconds 60}
-        Invoke-CMSyncCheck
+        Invoke-CMSyncCheck $LogFile
     }
     Catch [System.Exception]
     {
@@ -2113,7 +2214,7 @@ If ($UpdateADRDeploymentPackages){
                             #Try to create the new deployment package.
                             Try {
                                 $CorrectDeploymentPackage = New-CMSoftwareUpdateDeploymentPackage -Name $CorrectDeploymentPackageName -Path $NewDeploymentPackageSourcePath -WhatIf:$WhatIfPreference
-                                Add-TextToCMLog $LogFile "Created the new '$($CorrectDeploymentPackage.Name)' deployment package with ID '$($CorrectDeploymentPackage.PackageID)'." $component 1
+                                Add-TextToCMLog $LogFile "Created the new '$($CorrectDeploymentPackageName)' deployment package with ID '$($CorrectDeploymentPackage.PackageID)'." $component 1
                             } Catch {
                                 Add-TextToCMLog $LogFile "Failed to create a new deployment package '$($CorrectDeploymentPackage.Name)' for the the '$($AutomaticDeploymentRule.Name)' automatic deployment rule." $component 3
                                 Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
@@ -2122,7 +2223,7 @@ If ($UpdateADRDeploymentPackages){
                             }
 
                             #Get and loop through each distribution of the current package and distribute the new one to it.
-                            Add-TextToCMLog $LogFile "Distributing the new '$($CorrectDeploymentPackage.Name)' deployment package." $component 1
+                            Add-TextToCMLog $LogFile "Distributing the new '$($CorrectDeploymentPackageName)' deployment package." $component 1
                             $DeploymentPackageDistribution = Get-WmiObject -Namespace "ROOT\SMS\site_$($SiteCode)" -Query "SELECT Name, ContentServerType FROM SMS_PackageContentServerInfo WHERE ObjectID = '$($DeploymentPackage.PackageId)' And ContentServerID Not In (Select NALPath From SMS_MigrationDP)"
                             ForEach ($Distribution in $DeploymentPackageDistribution){
 
@@ -2147,7 +2248,7 @@ If ($UpdateADRDeploymentPackages){
                 } #Correct deployment package doesn't exist.
 
                 #If the correct deployment package doesn't exist then warn the user and do nothing.
-                If(!$CorrectDeploymentPackage){
+                If(!$CorrectDeploymentPackage -and (-not $WhatIfPreference)){
                     Add-TextToCMLog $LogFile "The correct deployment package '$($CorrectDeploymentPackageName)' for the '$($AutomaticDeploymentRule.Name)' automatic deployment rule does not exist and could not be created." $component 3
                 } Else {
                     #Try to change the ADR's deployment package to the correct one.
