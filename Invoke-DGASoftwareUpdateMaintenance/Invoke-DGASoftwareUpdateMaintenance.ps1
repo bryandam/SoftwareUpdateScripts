@@ -117,6 +117,8 @@ Version 2.4.5 01/19/19
 Version 2.4.6 12/19/2019
     Improved some WhatIf handling.
     Added catalog size information.
+Version 2.4.7 01/08/20
+    The sync check will now check for multiple status messages to determine if the SUP is still syncing. (Charles - @NoRemoteUsers).
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
 .LINK
@@ -416,11 +418,24 @@ Function Invoke-CMSyncCheck {
                 Start-Sleep -Seconds (300)
             }
 
+            <#
+            Source: http://eskonr.com/2015/01/download-sccm-configmgr-2012-r2-cu3-status-messages-documentation/
+            6701 = WSUS Synchronization started.
+            6702 = WSUS Synchronization done.
+            6703 = WSUS Synchronization failed.
+            6704 = WSUS Synchronization in progress. Current phase: Synchronizing WSUS Server.
+            6705 = WSUS Synchronization in progress. Current phase: Synchronizing site database.
+            6706 = WSUS Synchronization in progress. Current phase: Synchronizing Internet facing WSUS Server.
+            6707 = Content of WSUS Server %1 is out of sync with upstream server %2.
+            6708 = WSUS synchronization complete, with pending license terms downloads.
+            #>
+            $SynchronizingStatusMessages = @(6701,6704,6705,6706)
+
             $Synchronizing = $False
             ForEach ($softwareUpdatePointSyncStatus in Get-CMSoftwareUpdateSyncStatus){
-                If($softwareUpdatePointSyncStatus.LastSyncState -eq 6704){$Synchronizing = $True}
+                If($softwareUpdatePointSyncStatus.LastSyncState -in $SynchronizingStatusMessages){$Synchronizing = $True}
             }
-        } Until(!$Synchronizing)
+        } Until(!$Synchronizing)        
 
 
         #Loop through each SUP, calculate the last sync time, and make sure that they all synced successfully.
@@ -889,7 +904,7 @@ Param(
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.6"
+$scriptVersion = "2.4.7"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $IndexArray = @{
