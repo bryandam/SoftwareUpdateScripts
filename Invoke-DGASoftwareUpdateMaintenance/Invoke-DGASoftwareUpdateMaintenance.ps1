@@ -119,6 +119,9 @@ Version 2.4.6 12/19/2019
     Added catalog size information.
 Version 2.4.7 01/08/20
     The sync check will now check for multiple status messages to determine if the SUP is still syncing. (Charles - @NoRemoteUsers).
+Version 2.4.8 01/24/20
+    Change Get-CatalogInfo function to make its own connection.
+    Fix Boolean handling in settings file.
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
 .LINK
@@ -867,14 +870,19 @@ Function Get-CatalogInfo{
 [OutputType([System.Data.DataTable])]
 Param(
     [Parameter(Mandatory=$true)]
-    [System.Data.SqlClient.SqlConnection] $SqlConnection,
-    [Parameter(Mandatory=$true)]
-    [string] $SUSDbName,
+    [Microsoft.UpdateServices.Administration.IDatabaseConfiguration] $WSUSServerDB,
     [string] $LogFile = "Get-CatalogInfo.log"
     )
 
-    $query = "
-            Use $SUSDbName;
+    $SqlConnection = Connect-WSUSDB $WSUSServerDB $LogFile
+
+    If(!$SqlConnection)
+    {
+		Add-TextToCMLog $LogFile "Failed to connect to the WSUS database '$($WSUSServerDB.ServerName)'." $component 1
+    }
+    else {
+            $query =
+            "Use $($WSUSServerDB.DatabaseName);
             ;with cte as​
             (​
                 SELECT dbo.tbXml.RevisionID, ISNULL(datalength(dbo.tbXml.RootElementXml), 0) as Uncompressed, ISNULL(datalength(dbo.tbXml.RootElementXmlCompressed), 0) as Compressed FROM dbo.tbXml​
@@ -896,15 +904,15 @@ Param(
                 Inner Join tbBundleAtLeastOne t2​
                 On t1.BundledID=t2.BundledID​
                 Where ishidden=0 and pr.ExplicitlyDeployable=1​
-            )
-    "
+            )"
 
-    return Invoke-SQLCMD $SqlConnection $query $LogFile
+        return Invoke-SQLCMD $SqlConnection $query $LogFile
+    }
 }
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.7"
+$scriptVersion = "2.4.8"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 $IndexArray = @{
@@ -965,11 +973,11 @@ If ($ConfigFile){
                     $Data[1]=$Data[1].Trim()
                 }
                 #Try to evaluate the value as an expression otherwise use the value as-is.
-		Write-Verbose -Message "trying to Set Variable [$($Data[0])] to [$($Data[1])]"
+		        Write-Verbose -Message "trying to Set Variable [$($Data[0])] to [$($Data[1])]"
                 Try{
                     If ($Data[0] -eq 'SiteCode') { #force a numeric SiteCode to be a string
                         Set-Variable -Name $Data[0] -Value ($Data[1] -as [string]) -Force -WhatIf:$False
-                    } ElseIf ($Data[1] -match "^@.") {
+                    } ElseIf ($Data[1] -match "^@." -or $Data[1] -match "$*") {
                         Set-Variable -Name $Data[0] -Value (Invoke-Expression $Data[1]) -Force -WhatIf:$False
                     } ElseIf ($Data[1] -match "^[0-9]*$") { #case where entire value is numeric
                         Set-Variable -Name $Data[0] -Value ($Data[1] -as [int]) -Force -WhatIf:$False
@@ -1466,6 +1474,14 @@ $UpdatesToDecline = @{} #Hash table updates to decline.
 $UpdatesToDelete = @{} #Hash table updates to delete.
 If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlugins){
 
+    $WSUSServerDB = Get-WSUSDB $WSUSServer $LogFile
+    If(!$WSUSServerDB)
+    {
+	    Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
+        Set-Location $OriginalLocation
+        Return
+    }
+
     #Check the sync status.
     If ($StandAloneWSUS){
         Invoke-WSUSSyncCheck $WSUSServer $LogFile
@@ -1508,12 +1524,15 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     $ActiveUpdates = $AllUpdates | Where-Object {$_.IsDeclined -eq $False}
 
     #Estimate catalog size
-    $CatalogInfo = Get-CatalogInfo $SqlConnection $($WSUSServerDB.DatabaseName) $LogFile	
-    $InitialCatlogSize="Unknown"
-    $InitialCatlogSizeCompressed="Unknown"
-    If($CatalogInfo.Rows.Count -gt 0 ){
-        $InitialCatlogSize=$CatalogInfo.Rows[0].CatalogSize_MB
-        $InitialCatlogSizeCompressed=$CatalogInfo.Rows[0].CompressedCatalogSize_MB
+    if ($WSUSServerDB)
+    {
+        $CatalogInfo = Get-CatalogInfo $WSUSServerDB $LogFile	
+        $InitialCatlogSize="Unknown"
+        $InitialCatlogSizeCompressed="Unknown"
+        If($CatalogInfo.Rows.Count -gt 0 ){
+            $InitialCatlogSize=$CatalogInfo.Rows[0].CatalogSize_MB
+            $InitialCatlogSizeCompressed=$CatalogInfo.Rows[0].CompressedCatalogSize_MB
+        }
     }
 
     #Initialize count variables.
@@ -1775,10 +1794,13 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     }
 
     #Restimate catalog size
-    $NewCatalogInfo = Get-CatalogInfo $SqlConnection $($WSUSServerDB.DatabaseName) $LogFile	
-    If($NewCatalogInfo.Rows.Count -gt 0 ){
-        $InitialCatlogSize=$NewCatalogInfo.Rows[0].CatalogSize_MB
-        $InitialCatlogSizeCompressed=$NewCatalogInfo.Rows[0].CompressedCatalogSize_MB
+    if ($WSUSServerDB)
+    {
+        $NewCatalogInfo = Get-CatalogInfo $WSUSServerDB $LogFile
+        If($NewCatalogInfo.Rows.Count -gt 0 ){
+            $InitialCatlogSize=$NewCatalogInfo.Rows[0].CatalogSize_MB
+            $InitialCatlogSizeCompressed=$NewCatalogInfo.Rows[0].CompressedCatalogSize_MB
+        }
     }
 
     #Write the summary information.
@@ -1814,7 +1836,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     Add-TextToCMLog $LogFile "Total Active Updates = $($AllUpdates.Count - $DeclinedUpdates.Count - $countNewlyDeclined)"  $component 1
     Add-TextToCMLog $LogFile "Total Updates = $($AllUpdates.Count - $countNewlyDeleted)"  $component 1
     If($NewCatalogInfo.Rows.Count -gt 0 ){
-        Add-TextToCMLog $LogFile "Initial Catalog Size = $($NewCatalogInfo.Rows[0].CatalogSize_MB) MB ($($NewCatalogInfo.Rows[0].CompressedCatalogSize_MB) MB Compressed )" $component 1  
+        Add-TextToCMLog $LogFile "New Catalog Size = $($NewCatalogInfo.Rows[0].CatalogSize_MB) MB ($($NewCatalogInfo.Rows[0].CompressedCatalogSize_MB) MB Compressed )" $component 1  
     }
     Add-TextToCMLog $LogFile "========" $component 1
 
