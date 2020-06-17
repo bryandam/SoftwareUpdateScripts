@@ -45,10 +45,16 @@ $KnownEditions = @(
     "Office 365 Client Update - Monthly Channel \(Targeted\) Version",
     "Office 365 Client Update - Semi-annual Channel Version",
     "Office 365 Client Update - Semi-annual Channel \(Targeted\) Version",
-    "Microsoft 365 Apps Update - Monthly Channel Version",
-    "Microsoft 365 Apps Update - Monthly Channel \(Targeted\) Version",
-    "Microsoft 365 Apps Update - Semi-annual Channel Version",
-    "Microsoft 365 Apps Update - Semi-annual Channel \(Targeted\) Version"
+    "Office 365 Client Update for Windows 7 - Version",
+    "Office 365 Client Update - Current Channel \(Preview\) Version",
+    "Office 365 Client Update - Monthly Enterprise Channel Version",
+    "Office 365 Client Update - Semi-Annual Enterprise Channel Version",
+    "Office 365 Client Update - Semi-Annual Enterprise Channel \(Preview\) Version",
+    "Microsoft 365 Apps Update - Current Channel \(Preview\) Version",
+    "Microsoft 365 Apps Update - Current Channel Version",
+    "Microsoft 365 Apps Update - Monthly Enterprise Channel Version",
+    "Microsoft 365 Apps Update - Semi-Annual Enterprise Channel Version",
+    "Microsoft 365 Apps Update - Semi-Annual Enterprise Channel \(Preview\) Version"
 )
 Function Invoke-SelectUpdatesPlugin {
 
