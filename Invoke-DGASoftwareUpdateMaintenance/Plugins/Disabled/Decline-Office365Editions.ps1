@@ -15,9 +15,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 <#
 .SYNOPSIS
-Decline updates for editions of Windows 10 your organization does not support.
+Decline updates for editions of Office 365 your organization does not support.
 .DESCRIPTION
-Decline updates for editions of Windows 10 your organization does not support.  If the LatestVersionOnly is left to its default value of True then for each edition only the latest version will be retained and all others declined.
+Decline updates for editions of Office 365 your organization does not support.  If the LatestVersionOnly is left to its default value of True then for each edition only the latest version will be retained and all others declined.
 .NOTES
 You must un-comment the $SupportedEditions variable and add the editions your organization supports.
 The KnownEditions variable holds a list of known editions to _try_ and prevent the script from going rogue if MS decides to change the naming scheme.  If ... or when ... they do this will need to be updated.
