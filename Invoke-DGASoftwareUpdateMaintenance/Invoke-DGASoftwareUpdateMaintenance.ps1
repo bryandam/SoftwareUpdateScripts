@@ -1024,7 +1024,7 @@ $LogFile = "filesystem::$($LogFile)"
 If (Test-Path -Path 'variable:UpdateListOutputFile'){
     #If this was passed as a switch then use the default output file name.
     If (($UpdateListOutputFile -is [Boolean]) -or ($UpdateListOutputFile -eq 'True')){
-        $UpdateListOutputFile = 'UpdateListOutputFile.csv'
+        $UpdateListOutputFile = Join-Path -Path $scriptPath -ChildPath $([System.IO.Path]::ChangeExtension($ScriptFile, 'csv'))
     }
 
     #If this was passed as a switch then use the default output file.
