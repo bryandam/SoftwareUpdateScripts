@@ -38,7 +38,7 @@ Function Invoke-SelectUpdatesPlugin{
     $PluginName = 'Decline-WindowsItanium'
     $DeclineUpdates = @{}
     $WindowsItaniumUpdates = ($ActiveUpdates | Where-Object {($_.LegacyName -like '*-IA64-*' -or $_.Title -like '* Itanium*' -or $_.Title -like '* for IA64 *')})
-    Add-TextToCMLog $LogFile "$($WindowsItaniumUpdates.count) Widows Itanium Updates discovered" $PluginName 1
+    Add-TextToCMLog $LogFile "$($WindowsItaniumUpdates.count) Windows Itanium Updates discovered" $PluginName 1
     #Loop through the updates and decline any that match the version.
     ForEach ($Update in $WindowsItaniumUpdates) {
         $DeclineUpdates.Set_Item($Update.Id.UpdateId,"Windows Itanium")
