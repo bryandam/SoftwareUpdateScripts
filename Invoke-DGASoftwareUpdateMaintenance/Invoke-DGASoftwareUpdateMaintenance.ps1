@@ -124,13 +124,17 @@ Version 2.4.8 01/24/20
     Fix Boolean handling in settings file.
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
-Version 2.4.9 08/13/20
+Version 2.4.9 09/17/20
     Internal code updates for Set-Location/Pop-Location, spelling, spacing, aliases/full cmdlets, etc.
     Add config file for datFile
     Update config file processing to better detect UNC and file paths
     Add scriptFile variable and set default config files to be scriptFile.<associated extension>
     Updated logging to prepend WhatIf when running in WhatIf mode
-    Archive last output file
+    Archive last output file    
+    Update O365 plugin with new channel names [Damien Solodow]
+    Add several plugins [Chad Simmons, Damien Solodow]
+    Fix the lookup for ConfigMgr supersedence settings.
+
 .LINK
 http://www.damgoodadmin.com
 
@@ -919,7 +923,7 @@ Param(
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.8"
+$scriptVersion = "2.4.9"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = Split-Path -Path $MyInvocation.MyCommand.Definition -Parent
 Write-Verbose -Message "Script Path: $scriptPath"
@@ -1573,18 +1577,40 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
     #If no exclusion period was given then use the supersedence configuration of the SUP Component to calculate the exclusion date.
     If ($null -eq $ExclusionPeriod){
-
+        
         #If expiring immediately then use zero months otherwise use the number of months configured
         If ($StandAloneWSUS) {
             $ExclusionPeriod = 3
         }
-        ElseIf ((((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Mode'}).Value -eq 0){
-            $ExclusionPeriod = 0
-        } Else {
-            $ExclusionPeriod = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age'}).Value
+        Else {
+
+            #Get the supersedence settings from ConfigMgr.
+            $supersedenceMode = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Mode For NonFeature'}).Value
+                
+            #Verify that the product team didn't change these on us again.
+            if (!$supersedenceMode)
+            {
+                Add-TextToCMLog $LogFile "Failed to determine ConfigMgr's supersedence mode. Exiting without making any changes." $component 3             
+                return
+            }
+
+            If ($supersedenceMode -eq 0){            
+                $ExclusionPeriod = 0
+            } Else {
+                $supersedenceAge = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age For NonFeature'}).Value
+                #Verify that the product team didn't change these on us again.
+                if (!$supersedenceAge)
+                {
+                    Add-TextToCMLog $LogFile "Failed to determine ConfigMgr's supersedence age. Exiting without making any changes." $component 3             
+                    return
+                }
+                
+                $ExclusionPeriod = $supersedenceAge
+            }
         }
     }
     $ExclusionDate = (Get-Date).AddMonths($ExclusionPeriod * -1)
+
 
    #If deleting declined updates.
     If ($DeleteDeclined){
@@ -1615,7 +1641,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
     #If using the built-in logic for declining superseded updates.
     If($DeclineSuperseded){
-        Add-TextToCMLog $LogFile "Declining updates superseded before $ExclusionDate." $component 1
+        Add-TextToCMLog $LogFile "Declining updates superseded for $ExclusionPeriod months (before $ExclusionDate)." $component 1
 
         #Loop through updates and add those that match the user's criteria to the hash.
         ForEach ($Update in $ActiveUpdates) {
