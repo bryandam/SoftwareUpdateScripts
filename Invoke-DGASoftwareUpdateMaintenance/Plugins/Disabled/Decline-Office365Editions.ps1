@@ -28,12 +28,10 @@ Version 3.0: 06/09/20 Make channels multi-line, add extra channels
 #>
 #Un-comment and add elements to this array for editions you support.
 #Note: You must escape any parenthesis with the forward slash.  Ex.: "Office 365 Client Update - Monthly Channel \(Targeted\) Version"
-$SupportedEditions = @(
-    "Microsoft 365 Apps Update - Current Channel Version",
-    "Microsoft 365 Apps Update - Monthly Enterprise Channel Version",
-    "Microsoft 365 Apps Update - Semi-Annual Enterprise Channel Version",
-    "Microsoft 365 Apps Update - Semi-Annual Enterprise Channel \(Preview\) Version"
-)
+#$SupportedEditions = @(
+#    "Office 365 Client Update - Semi-annual Channel Version",
+#    "Microsoft 365 Apps Update - Semi-Annual Enterprise Channel Version"
+#)
 
 #Set this to $True to decline all but the latest version of each editions or $False to ignore versions.
 $LatestVersionOnly = $False
