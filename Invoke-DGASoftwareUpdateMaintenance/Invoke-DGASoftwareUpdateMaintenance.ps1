@@ -134,6 +134,10 @@ Version 2.4.9 09/17/20
     Update O365 plugin with new channel names [Damien Solodow]
     Add several plugins [Chad Simmons, Damien Solodow]
     Fix the lookup for ConfigMgr supersedence settings.
+Version 2.5.0 09/17/20
+    Fixed the fix for looking up ConfigMgr supersedence settings.
+Version 2.5.1 09/19/20
+    Fixed the fix for the fix for looking up ConfigMgr supersedence settings.
 
 .LINK
 http://www.damgoodadmin.com
@@ -923,7 +927,7 @@ Param(
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.9"
+$scriptVersion = "2.5.1"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
 $scriptPath = Split-Path -Path $MyInvocation.MyCommand.Definition -Parent
 Write-Verbose -Message "Script Path: $scriptPath"
@@ -1588,10 +1592,14 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
             $supersedenceMode = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Mode For NonFeature'}).Value
                 
             #Verify that the product team didn't change these on us again.
-            if (!$supersedenceMode)
+            if ($null -eq $supersedenceMode)
             {
-                Add-TextToCMLog $LogFile "Failed to determine ConfigMgr's supersedence mode. Exiting without making any changes." $component 3             
-                return
+                $supersedenceMode = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Mode'}).Value
+                if ($null -eq $supersedenceMode)
+                {
+                    Add-TextToCMLog $LogFile "Failed to determine ConfigMgr's supersedence mode. Exiting without making any changes." $component 3             
+                    return
+                }
             }
 
             If ($supersedenceMode -eq 0){            
@@ -1599,10 +1607,14 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
             } Else {
                 $supersedenceAge = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age For NonFeature'}).Value
                 #Verify that the product team didn't change these on us again.
-                if (!$supersedenceAge)
+                if ($null -eq $supersedenceAge)
                 {
-                    Add-TextToCMLog $LogFile "Failed to determine ConfigMgr's supersedence age. Exiting without making any changes." $component 3             
-                    return
+                    $supersedenceAge = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age'}).Value
+                    if ($null -eq $supersedenceAge)
+                    {
+                        Add-TextToCMLog $LogFile "Failed to determine ConfigMgr's supersedence age. Exiting without making any changes." $component 3             
+                        return
+                    }
                 }
                 
                 $ExclusionPeriod = $supersedenceAge
