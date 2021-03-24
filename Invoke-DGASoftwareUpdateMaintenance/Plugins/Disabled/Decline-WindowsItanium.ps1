@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #   ========== Keywords ==========
 #   Keywords: WSUS SUP SCCM ConfigMgr Decline Expire Update Maintenance Superseded
 #   ========== Change Log History ==========
+#   - 2020/08/13 by Chad.Simmons@CatapultSystems.com - added additional logging
 #   - 2019/09/19 by Charles - Some Itanium or IA64 updates were not declined, changed $_.ProductTitles to $_.Title
 #   - 2018/04/30 by Chad.Simmons@CatapultSystems.com - Created
 #   - 2018/04/30 by Chad@ChadsTech.net - Created
@@ -34,8 +35,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 ################################################################################
 
 Function Invoke-SelectUpdatesPlugin{
+    $PluginName = 'Decline-WindowsItanium'
     $DeclineUpdates = @{}
     $WindowsItaniumUpdates = ($ActiveUpdates | Where-Object {($_.LegacyName -like '*-IA64-*' -or $_.Title -like '* Itanium*' -or $_.Title -like '* for IA64 *')})
+    Add-TextToCMLog $LogFile "$($WindowsItaniumUpdates.count) Windows Itanium Updates discovered" $PluginName 1
     #Loop through the updates and decline any that match the version.
     ForEach ($Update in $WindowsItaniumUpdates) {
         $DeclineUpdates.Set_Item($Update.Id.UpdateId,"Windows Itanium")

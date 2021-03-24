@@ -112,7 +112,7 @@ Version 2.4.3
 Version 2.4.4 01/06/19
     Moved Get-WSUSDB into the features that need it to avoid DB connection issues where a DB isn't needed anyways.
 Version 2.4.5 01/19/19
-    Fix the count of declined superseded udpates.
+    Fix the count of declined superseded updates.
     Fix WhatIf handling for UpdateADRDeploymentPackages.
 Version 2.4.6 12/19/2019
     Improved some WhatIf handling.
@@ -124,6 +124,21 @@ Version 2.4.8 01/24/20
     Fix Boolean handling in settings file.
     [TODO] Sync approvals throughout hierarchy.
     [TODO] Orchestrate decline top-down and cleanup bottom-up throughout hierarchy.
+Version 2.4.9 09/17/20
+    Internal code updates for Set-Location/Pop-Location, spelling, spacing, aliases/full cmdlets, etc.
+    Add config file for datFile
+    Update config file processing to better detect UNC and file paths
+    Add scriptFile variable and set default config files to be scriptFile.<associated extension>
+    Updated logging to prepend WhatIf when running in WhatIf mode
+    Archive last output file    
+    Update O365 plugin with new channel names [Damien Solodow]
+    Add several plugins [Chad Simmons, Damien Solodow]
+    Fix the lookup for ConfigMgr supersedence settings.
+Version 2.5.0 09/17/20
+    Fixed the fix for looking up ConfigMgr supersedence settings.
+Version 2.5.1 09/19/20
+    Fixed the fix for the fix for looking up ConfigMgr supersedence settings.
+
 .LINK
 http://www.damgoodadmin.com
 
@@ -201,7 +216,7 @@ Param(
 
     #Force the script to run even if it was run recently.
     [Parameter(ParameterSetName='cmdline')]
-    
+
     [Parameter(ParameterSetName='configfile')]
     [switch]$Force,
 
@@ -239,7 +254,7 @@ Param(
 
     #Define the sitecode.
     [Parameter(ParameterSetName='cmdline')]
-    [string]$SiteCode,
+    [string][ValidateLength(3,3)]$SiteCode,
 
     #Define a standalone WSUS server.
     [Parameter(ParameterSetName='cmdline')]
@@ -395,7 +410,7 @@ Function Invoke-CMSyncCheck {
 ##########################################################################################################
     [CmdletBinding()]
     Param(
-    
+
         [string] $LogFile = "Invoke-CMSyncCheck.log",
 
         #The number of minutes to wait after the last sync to run the wizard.
@@ -438,7 +453,7 @@ Function Invoke-CMSyncCheck {
             ForEach ($softwareUpdatePointSyncStatus in Get-CMSoftwareUpdateSyncStatus){
                 If($softwareUpdatePointSyncStatus.LastSyncState -in $SynchronizingStatusMessages){$Synchronizing = $True}
             }
-        } Until(!$Synchronizing)        
+        } Until(!$Synchronizing)
 
 
         #Loop through each SUP, calculate the last sync time, and make sure that they all synced successfully.
@@ -751,7 +766,7 @@ Function Get-WSUSDB{
         Add-TextToCMLog $LogFile "Successfully tested the connection to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 1
     }
     Catch{
-        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3       
+        Add-TextToCMLog $LogFile "Failed to connect to the ($($WSUSServerDB.DatabaseName)) database on $($WSUSServerDB.ServerName)." $component 3
         Add-TextToCMLog $LogFile "Error ($($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         Return
@@ -912,9 +927,12 @@ Param(
 #endregion
 
 $cmSiteVersion = [version]"5.00.8540.1000"
-$scriptVersion = "2.4.8"
+$scriptVersion = "2.5.1"
 $component = 'Invoke-DGASoftwareUpdateMaintenance'
-$scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
+$scriptPath = Split-Path -Path $MyInvocation.MyCommand.Definition -Parent
+Write-Verbose -Message "Script Path: $scriptPath"
+$scriptFile = Split-Path -Path $MyInvocation.MyCommand.Definition -Leaf
+Write-Verbose -Message "Script File: $scriptFile"
 $IndexArray = @{
                 'tbLocalizedProperty' = 'LocalizedPropertyID'
                 'tbLocalizedPropertyForRevision'='LocalizedPropertyID'
@@ -926,7 +944,7 @@ $IndexArray = @{
 
 #If using a configuration file.
 If ($PSCmdlet.ParameterSetName -eq 'configfile' -and [string]::IsNullOrEmpty($ConfigFile)){
-        $ConfigFile = Join-Path $scriptPath 'config.ini'
+        $ConfigFile = Join-Path -Path $scriptPath -ChildPath 'config.ini'
         Write-Verbose "No parameters were found.  Using default configuration file"
 }
 
@@ -977,14 +995,16 @@ If ($ConfigFile){
                 Try{
                     If ($Data[0] -eq 'SiteCode') { #force a numeric SiteCode to be a string
                         Set-Variable -Name $Data[0] -Value ($Data[1] -as [string]) -Force -WhatIf:$False
+                    } ElseIf ($Data[1] -match "^\\\\\w*" -or $Data[1] -match "^[a-zA-Z]:\\\w*") { #match a local or UNC path
+                        Set-Variable -Name $Data[0] -Value ($Data[1] -as [string]) -Force -WhatIf:$False
                     } ElseIf ($Data[1] -match "^@." -or $Data[1] -match "$*") {
                         Set-Variable -Name $Data[0] -Value (Invoke-Expression $Data[1]) -Force -WhatIf:$False
                     } ElseIf ($Data[1] -match "^[0-9]*$") { #case where entire value is numeric
                         Set-Variable -Name $Data[0] -Value ($Data[1] -as [int]) -Force -WhatIf:$False
                     } Else {
                         Set-Variable -Name $Data[0] -Value ($Data[1] -as [string]) -Force -WhatIf:$False
-                    }                }
-                Catch{
+                    }
+                } Catch{
                     Set-Variable -Name $Data[0] -Value $Data[1] -Force -WhatIf:$False
                 }
             }
@@ -1001,26 +1021,26 @@ If ($ConfigFile){
 } #If config file was passed.
 
 #If log file is null then set it to the default and then make the provider type explicit.
-If (!$LogFile) {
-    $LogFile = Join-Path $scriptPath "updatemaint.log"
+If ([string]::IsNullOrEmpty($LogFile)) {
+    $LogFile = Join-Path -Path $scriptPath -ChildPath $([System.IO.Path]::ChangeExtension($ScriptFile, 'log'))
+    Write-Verbose -Message "setting Log File to default"
 }
-
+Write-Verbose -Message "Log File: $LogFile"
 $LogFile = "filesystem::$($LogFile)"
 
 #If output file was given then make sure everything looks good.
-If ($UpdateListOutputFile){
-
+If (Test-Path -Path 'variable:UpdateListOutputFile'){
     #If this was passed as a switch then use the default output file name.
     If (($UpdateListOutputFile -is [Boolean]) -or ($UpdateListOutputFile -eq 'True')){
-        $UpdateListOutputFile = 'UpdateListOutputFile.csv'
+        $UpdateListOutputFile = Join-Path -Path $scriptPath -ChildPath $([System.IO.Path]::ChangeExtension($ScriptFile, 'csv'))
     }
 
     #If this was passed as a switch then use the default output file.
-    If (![System.IO.Path]::IsPathRooted($UpdateListOutputFile)){
-        $UpdateListOutputFile = Join-Path $scriptPath $UpdateListOutputFile
+    If (![System.IO.Path]::IsPathRooted($UpdateListOutputFile)) {
+        $UpdateListOutputFile = Join-Path -Path $scriptPath -ChildPath $UpdateListOutputFile
     }
-    $UpdateListOutputFile = "filesystem::$($UpdateListOutputFile)"
     Write-Verbose "Output File: $UpdateListOutputFile"
+    $UpdateListOutputFile = "filesystem::$($UpdateListOutputFile)"
 }
 
 #If the log file exists and is larger then the maximum then roll it over.
@@ -1032,8 +1052,11 @@ If (Test-path  $LogFile -PathType Leaf) {
 Add-TextToCMLog $LogFile "$component started (Version $($scriptVersion))." $component 1
 
 #Check to see if this script has ran recently.
-$lastRanPath = "filesystem::$(Join-Path $scriptPath "lastran_$($component)")"
-If (Test-Path -Path $lastRanPath -NewerThan ((get-date).AddHours(-24).ToString())){
+$lastRanPath = Join-Path -Path $scriptPath -ChildPath $([System.IO.Path]::ChangeExtension($ScriptFile, 'lastran')) #"filesystem::$(Join-Path $scriptPath "lastran_$($component)")"
+Write-Verbose "Last Ran Path: $lastRanPath"
+$lastRanPath = "filesystem::$($lastRanPath)"
+
+If (Test-Path -Path $lastRanPath -NewerThan ((Get-Date).AddHours(-24).ToString())) {
     #If the user has chosen to force the script to run or is running in WhatIf mode then run the script anyways.
     If ($Force -or $WhatIfPreference){
         Add-TextToCMLog $LogFile "The script was run in the last 24 hours but is being forced to run." $component 1
@@ -1043,11 +1066,11 @@ If (Test-Path -Path $lastRanPath -NewerThan ((get-date).AddHours(-24).ToString()
     }
 }
 
-#Mark the last time the script ran.  We do this now and at the end to avoid running multiple instances of the script at the same time.	
+#Mark the last time the script ran.  We do this now and at the end to avoid running multiple instances of the script at the same time.
 If (!$WhatIfPreference){Get-Date | Out-File $lastRanPath -Force}
 
 #Check to make sure we're running this on a primary site server that has the SMS namespace.
-If (!($StandAloneWSUS) -and !(Get-Wmiobject -namespace "Root" -class "__Namespace" -Filter "Name = 'SMS'")){
+If (!($StandAloneWSUS) -and !(Get-WmiObject -namespace "Root" -class "__Namespace" -Filter "Name = 'SMS'")){
     Add-TextToCMLog $LogFile "Currently, this script must be ran on a primary site server. When the CM 1706 reaches critical mass this requirement might be removed." $component 3
     Return
 }
@@ -1120,9 +1143,6 @@ If ($MaxUpdateRuntime){
 }
 #endregion
 
-#Change the directory to the site location.
-$OriginalLocation = Get-Location
-
 #Try to load the UpdateServices module.
 #NOTE: I initially tried using the WSUS Powershell module but it was exponentially slower than the API calls.  Instead of a seconds it took hours to get the update list.
 Try {
@@ -1172,8 +1192,12 @@ Else{
     #You can't pass WhatIf to the Import-Module function and it spits out a lot of text, so work around it.
     $WhatIf = $WhatIfPreference
     $WhatIfPreference = $False
-    Import-Module $configManagerCmdLetpath -Force
+    $Verbose = $VerbosePreference
+    $VerbosePreference = 'SilentlyContinue'
+    Import-Module $configManagerCmdLetPath -Force
     $WhatIfPreference = $WhatIf
+    $VerbosePreference = $Verbose
+    Remove-Variable -Name WhatIf, Verbose -WhatIf:$false
 
     #Get the site code
     If (!$SiteCode){$SiteCode = Get-SiteCode}
@@ -1200,7 +1224,7 @@ Else{
     #Set and verify the location.
     Try{
         Add-TextToCMLog $LogFile "Connecting to site: $($SiteCode)" $component 1
-        Set-Location "$($SiteCode):"  | Out-Null
+        Push-Location -Path "$($SiteCode):"  | Out-Null
     } Catch {
         Add-TextToCMLog $LogFile "Could not set location to site: $($SiteCode)." $component 3
         Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
@@ -1229,7 +1253,7 @@ Else{
         #Verify that an active SUP was found.
         If (!$ActiveSoftwareUpdatePoint){
             Add-TextToCMLog $LogFile "The active software update point ($WSUSFQDN) could not be found." $component 3
-            Set-Location $OriginalLocation
+            Pop-Location
             Return
         }
         Add-TextToCMLog $LogFile "The active software update point is $WSUSFQDN." $component 1
@@ -1250,7 +1274,7 @@ Else{
         Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
         $WSUSServer = $null
-        Set-Location $OriginalLocation
+        Pop-Location
         Return
     }
 } #If Not StandAloneWSUS
@@ -1265,15 +1289,15 @@ Try{
     Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     $WSUSServer = $null
-    Set-Location $OriginalLocation
+    Pop-Location
     Return
 }
 
 #If the WSUS object is not instantiated then exit.
-If ($WSUSServer -eq $null) {
+If ($null -eq $WSUSServer) {
     Add-TextToCMLog $LogFile "Failed to connect." $component 3
     Add-TextToCMLog $LogFile "Please make sure that WSUS Admin Console is installed on this machine" $component 3
-    Set-Location $OriginalLocation
+    Pop-Location
     Return
  }
 
@@ -1288,7 +1312,7 @@ If ($UseCustomIndexes){
     If(!$WSUSServerDB)
     {
 	    Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
-        Set-Location $OriginalLocation
+        Pop-Location
         Return
     }
 
@@ -1339,7 +1363,7 @@ If ($UseCustomIndexes){
 		#Disconnect from the database.
 		$SqlConnection.Close()
 	} #Connect-WSUSDB
-	
+
 
 }
 
@@ -1352,7 +1376,7 @@ If ($RemoveCustomIndexes){
     If(!$WSUSServerDB)
     {
 	    Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
-        Set-Location $OriginalLocation
+        Pop-Location
         Return
     }
 
@@ -1410,13 +1434,13 @@ If($FirstRun){
 
 	Add-TextToCMLog $LogFile "User selected FirstRun. Will try to delete obsolete updates by directly calling the database store procedures." $component 1
 
-	If (!$UseCustomIndexes){Add-TextToCMLog $LogFile "You have chosen not to use the UseCustomIndexes feature.  While the custom indexes are not suported by Microsoft the update deletion process can be painfully slow and it is recommended that you use them." $component 2}
+	If (!$UseCustomIndexes){Add-TextToCMLog $LogFile "You have chosen not to use the UseCustomIndexes feature.  While the custom indexes are not supported by Microsoft the update deletion process can be painfully slow and it is recommended that you use them." $component 2}
 
     $WSUSServerDB = Get-WSUSDB $WSUSServer $LogFile
     If(!$WSUSServerDB)
     {
 	    Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
-        Set-Location $OriginalLocation
+        Pop-Location
         Return
     }
 
@@ -1437,7 +1461,7 @@ If($FirstRun){
             $LocalUpdateIdRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select UpdateID from tbUpdate Where LocalUpdateID = $($ObsoleteUpdates.Rows[$i][0])"  $LogFile
             If ($LocalUpdateIdRows.Rows.Count -gt 0){
                 $LocalUpdateId = $LocalUpdateIdRows.Rows[0][0]
-                
+
                 $UpdateTitleRows = Invoke-SQLCMD $SqlConnection "Use $($WSUSServerDB.DatabaseName);Select DefaultTitle from PUBLIC_VIEWS.vUpdate Where UpdateId = '$LocalUpdateId'"  $LogFile
                 If ($UpdateTitleRows.Rows.Count -gt 0){
                     $UpdateTitle = $UpdateTitleRows.Rows[0][0]
@@ -1478,7 +1502,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     If(!$WSUSServerDB)
     {
 	    Add-TextToCMLog $LogFile "Failed to get the WSUS database configuration." $component 3
-        Set-Location $OriginalLocation
+        Pop-Location
         Return
     }
 
@@ -1499,7 +1523,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
         Add-TextToCMLog $LogFile "If this operation timed out, try running the script with only the FirstRun parameter." $component 3
         Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
-	    Set-Location $OriginalLocation
+	    Pop-Location
 	    Return
     }
     Add-TextToCMLog $LogFile "Retrieved list of updates." $component 1
@@ -1512,11 +1536,18 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
         Invoke-CMSyncCheck $LogFile
     }
 
-    #Load the dat file.
-    $datFilePath = "filesystem::$(Join-Path $scriptPath 'updatemaint.dat')"
+    #If dat file is null then set it to the default and then make the provider type explicit.
+    #$datFilePath = "filesystem::$(Join-Path $scriptPath 'updatemaint.dat')"
+    If ([string]::IsNullOrEmpty($datFile)) {
+        $datFile = Join-Path -Path $scriptPath -ChildPath $([System.IO.Path]::ChangeExtension($ScriptFile, 'dat'))
+        Write-Verbose -Message "setting Dat File to default"
+    }
+    Write-Verbose -Message "Dat File: $datFile"
+    $datFile = "filesystem::$($datFile)"
+
     [Hashtable]$DeclinedUpdateData = @{}
-    If (Test-Path $datFilePath){[Hashtable]$DeclinedUpdateData = Import-Clixml -Path $datFilePath}
-    Add-TextToCMLog $LogFile "Loaded $($DeclinedUpdateData.Count) declined updates from the data file $datFilePath." $component 1
+    If (Test-Path $datFile){[Hashtable]$DeclinedUpdateData = Import-Clixml -Path $datFile}
+    Add-TextToCMLog $LogFile "Loaded $($DeclinedUpdateData.Count) declined updates from the data file $datFile." $component 1
 
     #Divide the updates list between declined or not.
     #This isn't strictly necessary but helps prevents myself or the plugins from trying to re-decline an update.
@@ -1526,7 +1557,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     #Estimate catalog size
     if ($WSUSServerDB)
     {
-        $CatalogInfo = Get-CatalogInfo $WSUSServerDB $LogFile	
+        $CatalogInfo = Get-CatalogInfo $WSUSServerDB $LogFile
         $InitialCatlogSize="Unknown"
         $InitialCatlogSizeCompressed="Unknown"
         If($CatalogInfo.Rows.Count -gt 0 ){
@@ -1546,22 +1577,52 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     $countDeclinedByTitleResults = @{}
     $countDeclinedByPlugin = 0
     $countDeclinedByPluginResults = @{}
-    ForEach ($SearchString In $DeclineByTitle){$countDeclinedByTitleResults[$SearchString]=0}    
-    
-    #If no exclusion period was given then use the supersedence configuration of the SUP Component to calculate the exclusion date.
-    If ($ExclusionPeriod -eq $null){
+    ForEach ($SearchString In $DeclineByTitle){$countDeclinedByTitleResults[$SearchString]=0}
 
+    #If no exclusion period was given then use the supersedence configuration of the SUP Component to calculate the exclusion date.
+    If ($null -eq $ExclusionPeriod){
+        
         #If expiring immediately then use zero months otherwise use the number of months configured
         If ($StandAloneWSUS) {
             $ExclusionPeriod = 3
         }
-        ElseIf ((((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Mode'}).Value -eq 0){
-            $ExclusionPeriod = 0
-        } Else {
-            $ExclusionPeriod = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age'}).Value
+        Else {
+
+            #Get the supersedence settings from ConfigMgr.
+            $supersedenceMode = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Mode For NonFeature'}).Value
+                
+            #Verify that the product team didn't change these on us again.
+            if ($null -eq $supersedenceMode)
+            {
+                $supersedenceMode = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Mode'}).Value
+                if ($null -eq $supersedenceMode)
+                {
+                    Add-TextToCMLog $LogFile "Failed to determine ConfigMgr's supersedence mode. Exiting without making any changes." $component 3             
+                    return
+                }
+            }
+
+            If ($supersedenceMode -eq 0){            
+                $ExclusionPeriod = 0
+            } Else {
+                $supersedenceAge = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age For NonFeature'}).Value
+                #Verify that the product team didn't change these on us again.
+                if ($null -eq $supersedenceAge)
+                {
+                    $supersedenceAge = (((Get-CMSoftwareUpdatePointComponent -SiteCode $SiteCode).Props) | Where-Object {$_.PropertyName -eq 'Sync Supersedence Age'}).Value
+                    if ($null -eq $supersedenceAge)
+                    {
+                        Add-TextToCMLog $LogFile "Failed to determine ConfigMgr's supersedence age. Exiting without making any changes." $component 3             
+                        return
+                    }
+                }
+                
+                $ExclusionPeriod = $supersedenceAge
+            }
         }
     }
     $ExclusionDate = (Get-Date).AddMonths($ExclusionPeriod * -1)
+
 
    #If deleting declined updates.
     If ($DeleteDeclined){
@@ -1586,13 +1647,13 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
             Else{
                 $DeclinedUpdateData.Set_Item($Update.Id.UpdateId,(Get-Date))
             }
-            
+
         } #ForEach DeclinedUpdates
-    } #Deletedeclined
+    } #DeleteDeclined
 
     #If using the built-in logic for declining superseded updates.
     If($DeclineSuperseded){
-        Add-TextToCMLog $LogFile "Declining updates superseded before $ExclusionDate." $component 1
+        Add-TextToCMLog $LogFile "Declining updates superseded for $ExclusionPeriod months (before $ExclusionDate)." $component 1
 
         #Loop through updates and add those that match the user's criteria to the hash.
         ForEach ($Update in $ActiveUpdates) {
@@ -1602,7 +1663,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                 #Count the total number of superseded updates.
                 $countSuperseded++
 
-                #Exclude superseded updates that do not meet the last level or exlusion period criteria.
+                #Exclude superseded updates that do not meet the last level or exclusion period criteria.
                 If ((($DeclineLastLevelOnly -and !$Update.HasSupersededUpdates) -or !$DeclineLastLevelOnly) -and (! (Test-Exclusions $Update)))  {
 
                     #Get the superseding updates.
@@ -1611,7 +1672,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                     #Loop through the superseding updates.
                     ForEach ($SupersedingUpdate in $SupersedingUpdates){
 
-                        #If any of the superseding updates were created before the exclusion date then decline the supserseded update.
+                        #If any of the superseding updates were created before the exclusion date then decline the superseded update.
                         If ($SupersedingUpdate.CreationDate -le $ExclusionDate){
                             #Add the update to the hash and count the number of superseded updates we decline.
                             $UpdatesToDecline.Set_Item($Update.Id.UpdateId,"Superseded")
@@ -1697,7 +1758,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                         } Else {
 
                             #Remove duplicate items from the plugin hash.
-                            $duplicates = $UpdatesToDecline.keys | where {$pluginHash.ContainsKey($_)}
+                            $duplicates = $UpdatesToDecline.keys | Where-Object {$pluginHash.ContainsKey($_)}
                             ForEach ($item in $duplicates) {
                                 $pluginHash.Remove($item)
                             }
@@ -1713,7 +1774,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
 
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to load the $($File.BaseName) plugin and call Invoke-SelectUpdatesPlugin function." $component 3
-                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 } Finally {
 
@@ -1728,7 +1789,15 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     Add-TextToCMLog $LogFile "$($UpdatesToDecline.Count) updates were selected to be declined." $component 1
     If($DeleteDeclined){Add-TextToCMLog $LogFile "$($UpdatesToDelete.Count) updates were selected to be deleted." $component 1}
     If (($UpdatesToDecline.Count -gt 0) -or ($UpdatesToDelete.Count -gt 0)){
-        If ($UpdateListOutputFile){"Update Id,Revision Number,Title,KB Articles,Security Bulletin,Has Superseded Updates,Creation Date,Declined Reason" | Out-File $UpdateListOutputFile -Force -Encoding Default -WhatIf:$False}
+        If ($UpdateListOutputFile){
+            If (Test-Path -Path $UpdateListOutputFile -PathType Leaf) {
+                #Archive last output file
+                $UpdateListOutputFileDate = Get-Date -Date ((Get-Item -Path $UpdateListOutputFile).LastWriteTime) -Format 'yyyyMMdd_HHmmss'
+                $UpdateListOutputFileArchive = $UpdateListOutputFileDate + [System.IO.Path]::GetExtension($UpdateListOutputFile)
+                Write-Verbose -Message "Update List Output File Archive: $([System.IO.Path]::ChangeExtension($UpdateListOutputFile, $UpdateListOutputFileArchive))"
+                Move-Item -Path $UpdateListOutputFile -Destination $([System.IO.Path]::ChangeExtension($UpdateListOutputFile, $UpdateListOutputFileArchive)) -WhatIf:$false
+            }
+            "Update Id,Revision Number,Title,KB Articles,Security Bulletin,Has Superseded Updates,Creation Date,Declined Reason" | Out-File $UpdateListOutputFile -Force -Encoding Default -WhatIf:$False}
 
         #Loop through updates and decline those that have been selected.
         ForEach ($Update in $AllUpdates) {
@@ -1756,7 +1825,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                         }
                     }
 
-                    #Decline the udpate.
+                    #Decline the update.
                     If ($UpdatesToDecline.ContainsKey($Update.Id.UpdateId)){
                         If (!$WhatIfPreference){$Update.Decline()}
                         $Action = 'Declined'
@@ -1766,7 +1835,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                         #Save the declined date.
                         $DeclinedUpdateData.Set_Item($Update.Id.UpdateId, (Get-Date))
                     }
-                    #Delete the udpate.
+                    #Delete the update.
                     If ($UpdatesToDelete.ContainsKey($Update.Id.UpdateId)){
                         If (!$WhatIfPreference){$WSUSServer.DeleteUpdate($Update.Id.UpdateId)}
                         $Action = 'Deleted'
@@ -1776,13 +1845,14 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
                     }
 
                     #Log what we've done.
+                    If ($WhatIfPreference) { $Action = 'WhatIf' + ' ' + $Action}
                     Add-TextToCMLog $LogFile "$Action update '$($Update.Title)' (ID: $($Update.Id.UpdateId)). Source: $Source" $component 1
                     If ($UpdateListOutputFile){"$($Update.Id.UpdateId),$($Update.Id.RevisionNumber),""$($Update.Title)"",$($Update.KnowledgeBaseArticles),$($Update.SecurityBulletins),$($Update.HasSupersededUpdates),$($Update.CreationDate),$Source" | Out-File $UpdateListOutputFile -Append -Encoding Default -WhatIf:$False}
                 }
                 Catch [System.Exception]
                 {
                     Add-TextToCMLog $LogFile "Failed to decline update '$($Update.Title)' (ID: $($Update.Id.UpdateId)). Source: $($UpdatesToDecline.($Update.Id.UpdateId)) Error: $($_.Exception.Message)." $component 3
-                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
             }
@@ -1809,7 +1879,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     Add-TextToCMLog $LogFile "Summary:"  $component 1
     Add-TextToCMLog $LogFile "========" $component 1
 
-    Add-TextToCMLog $LogFile "Initial Catalog Size = $InitialCatlogSize MB ($InitialCatlogSizeCompressed MB Compressed )" $component 1    
+    Add-TextToCMLog $LogFile "Initial Catalog Size = $InitialCatlogSize MB ($InitialCatlogSizeCompressed MB Compressed )" $component 1
     Add-TextToCMLog $LogFile "All Updates = $($AllUpdates.Count)" $component 1
     Add-TextToCMLog $LogFile "All Declined Updates = $($DeclinedUpdates.Count)"   $component 1
     Add-TextToCMLog $LogFile "All Updates Except Declined = $($ActiveUpdates.Count)"   $component 1
@@ -1836,13 +1906,13 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     Add-TextToCMLog $LogFile "Total Active Updates = $($AllUpdates.Count - $DeclinedUpdates.Count - $countNewlyDeclined)"  $component 1
     Add-TextToCMLog $LogFile "Total Updates = $($AllUpdates.Count - $countNewlyDeleted)"  $component 1
     If($NewCatalogInfo.Rows.Count -gt 0 ){
-        Add-TextToCMLog $LogFile "New Catalog Size = $($NewCatalogInfo.Rows[0].CatalogSize_MB) MB ($($NewCatalogInfo.Rows[0].CompressedCatalogSize_MB) MB Compressed )" $component 1  
+        Add-TextToCMLog $LogFile "New Catalog Size = $($NewCatalogInfo.Rows[0].CatalogSize_MB) MB ($($NewCatalogInfo.Rows[0].CompressedCatalogSize_MB) MB Compressed )" $component 1
     }
     Add-TextToCMLog $LogFile "========" $component 1
 
     #Save the declined update data.
-    If (!$WhatIfPreference){Export-Clixml -Path $datFilePath -InputObject $DeclinedUpdateData -Force}
-    Add-TextToCMLog $LogFile "Saved $($DeclinedUpdateData.Count) declined updates to the data file $datFilePath." $component 1
+    If (!$WhatIfPreference){Export-Clixml -Path $datFile -InputObject $DeclinedUpdateData -Force}
+    Add-TextToCMLog $LogFile "Saved $($DeclinedUpdateData.Count) declined updates to the data file $datFile." $component 1
 
 } #If DeclineSuperseded, DeclineByTitle, or DeclineByPlugins
 
@@ -1887,7 +1957,7 @@ catch [System.Exception]
 {
     Add-TextToCMLog $LogFile "Failed to run WSUS cleanup wizard." $component 3
     Add-TextToCMLog $LogFile "You might need to run the WSUS cleanup wizard multiple times for complete success." $component 3
-    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+    Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     $WSUSServer = $null
 }
@@ -1909,7 +1979,7 @@ If ($ReSyncUpdates){
     Catch [System.Exception]
     {
         Add-TextToCMLog $LogFile "Failed to initiate a full update sync.)" $component 3
-        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     }
 }
@@ -1923,7 +1993,7 @@ If ($CleanSUGs){
         $SoftwareUpdateGroups = Get-CMSoftwareUpdateGroup
     } Catch {
         Add-TextToCMLog $LogFile "Failed to get software update groups." $component 3
-        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     }
 
@@ -1942,7 +2012,7 @@ If ($CleanSUGs){
                     If(!$WhatIfPreference){Remove-CMSoftwareUpdateFromGroup -SoftwareUpdate $Update -SoftwareUpdateGroup $SoftwareUpdateGroup  -Force}
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to get remove '$($Update.LocalizedDisplayName)' from the update group '$($SoftwareUpdateGroup.LocalizedDisplayName)'." $component 3
-                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
 
@@ -1958,7 +2028,7 @@ If ($CleanSUGs){
                     Remove-CMSoftwareUpdateGroup -InputObject $SoftwareUpdateGroup -Force -WhatIf:$WhatIfPreference
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to remove the '$($SoftwareUpdateGroup.LocalizedDisplayName)' software update group." $component 3
-                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
 
@@ -1976,7 +2046,7 @@ If ($CombineSUGs){
         $SoftwareUpdateGroups = Get-CMSoftwareUpdateGroup
     } Catch {
         Add-TextToCMLog $LogFile "Failed to get software update groups." $component 3
-        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     }
 
@@ -1985,7 +2055,7 @@ If ($CombineSUGs){
         $AutomaticDeploymentRules = Get-CMSoftwareUpdateAutoDeploymentRule -Fast
     } Catch {
         Add-TextToCMLog $LogFile "Failed to get automatic deployment rules." $component 3
-        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+        Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
     }
 
@@ -1993,8 +2063,8 @@ If ($CombineSUGs){
     ForEach($AutomaticDeploymentRule in $AutomaticDeploymentRules){
 
         #Get a list of SUGS sorted by descending creation date where the name matches the ADR and has a date.
-        #This is an attempt the match ADRS to SUGs.  While the SUG object has an AssociatedAutoRuleID property it is removed if the ADR is modified in any way.
-        $ADRSUGs = $SoftwareUpdateGroups | Where {$_.LocalizedDisplayName -match "$($AutomaticDeploymentRule.Name) \d\d\d\d-\d\d-\d\d"} | Sort-Object DateCreated -Descending
+        #This is an attempt the match ADRs to SUGs.  While the SUG object has an AssociatedAutoRuleID property it is removed if the ADR is modified in any way.
+        $ADRSUGs = $SoftwareUpdateGroups | Where-Object {$_.LocalizedDisplayName -match "$($AutomaticDeploymentRule.Name) \d\d\d\d-\d\d-\d\d"} | Sort-Object DateCreated -Descending
 
         #If there are more SUGS than the user wants, then add them to the yearly SUG.
         If ($ADRSUGs.Count -gt $CombineSUGs) {
@@ -2003,7 +2073,7 @@ If ($CombineSUGs){
             ForEach($i in $CombineSUGs..($ADRSUGs.Count-1)){
                 $SUG = $ADRSUGs[$i]
 
-                Add-TextToCMLog $LogFile  "Attempting to add '$($SUG.LocalizedDisplayName)' to a yearly software update group." $component 1
+                Add-TextToCMLog $LogFile "Attempting to add '$($SUG.LocalizedDisplayName)' to a yearly software update group." $component 1
 
                 #Get the name of the yearly SUG name based on the ADR name plus the first four digits which are the year.
                 $SUG.LocalizedDisplayName -match "$($AutomaticDeploymentRule.Name) \d\d\d\d" | Out-Null
@@ -2014,32 +2084,32 @@ If ($CombineSUGs){
                     $YearlySUG = Get-CMSoftwareUpdateGroup -Name $YearlySUGName
                 } Catch {
                     Add-TextToCMLog $LogFile "Failed to get the yearly software update group named '$($YearlySUG)'." $component 3
-                    Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                    Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                     Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                 }
 
                 #If the yearly SUG didn't already exist then rename the current SUG and make it the yearly SUG.
                 #Otherwise, add the SUG's updates to the yearly SUG and delete the SUG.
                 If(!$YearlySUG){
-                    Add-TextToCMLog $LogFile  "Could not find a '$($YearlySUGName)' yearly software update group and will rename the '$($SUG.LocalizedDisplayName)' software update group." $component 1
+                    Add-TextToCMLog $LogFile "Could not find a '$($YearlySUGName)' yearly software update group and will rename the '$($SUG.LocalizedDisplayName)' software update group." $component 1
 
                     Try{
                         Set-CMSoftwareUpdateGroup -InputObject $SUG -NewName $YearlySUGName -WhatIf:$WhatIfPreference | Out-Null
                         $YearlySUG = $SUG
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to rename the '$($SUG.LocalizedDisplayName)' software update group." $component 3
-                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                     }
                 } Else {
 
                     #Try to add the SUG's updates to the yearly SUG.
                     Try{
-                        Add-TextToCMLog $LogFile  "Adding the updates from the '$($SUG.LocalizedDisplayName)' software update group to the '$($YearlySUGName)' yearly software update group." $component 1
+                        Add-TextToCMLog $LogFile "Adding the updates from the '$($SUG.LocalizedDisplayName)' software update group to the '$($YearlySUGName)' yearly software update group." $component 1
                         Get-CMSoftwareUpdate -UpdateGroup $SUG -Fast | Add-CMSoftwareUpdateToGroup -SoftwareUpdateGroup $YearlySUG -WhatIf:$WhatIfPreference
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to add the updates from the '$($SUG.LocalizedDisplayName)' software update group to the '$($YearlySUG.LocalizedDisplayName)' yearly software update group." $component 3
-                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
 
                         #Skip to the next ADR SUG without removing the current one.
@@ -2048,11 +2118,11 @@ If ($CombineSUGs){
 
                     #Try to delete the SUG.
                     Try{
-                        Add-TextToCMLog $LogFile  "Removing the '$($SUG.LocalizedDisplayName)' software update group." $component 1
+                        Add-TextToCMLog $LogFile "Removing the '$($SUG.LocalizedDisplayName)' software update group." $component 1
                         Remove-CMSoftwareUpdateGroup -InputObject $SUG -Force -WhatIf:$WhatIfPreference
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to delete the '$($SUG.LocalizedDisplayName)' software update group." $component 3
-                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                     }
                 }
@@ -2082,7 +2152,7 @@ If ($MaxUpdateRuntime){
                         Add-TextToCMLog $LogFile "Set maximum runtime for '$($Update.LocalizedDisplayName)' to $($Value.Value) minutes." $component 1
                     } Catch {
                         Add-TextToCMLog $LogFile "Failed to set maximum runtime for '$($Update.LocalizedDisplayName)'." $component 3
-                        Add-TextToCMLog $LogFile  "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
+                        Add-TextToCMLog $LogFile "Error: $($_.Exception.HResult)): $($_.Exception.Message)" $component 3
                         Add-TextToCMLog $LogFile "$($_.InvocationInfo.PositionMessage)" $component 3
                     }
                 }
@@ -2312,7 +2382,7 @@ If ($UpdateADRDeploymentPackages){
 
 Add-TextToCMLog $LogFile "$component finished." $component 1
 Add-TextToCMLog $LogFile "#############################################################################################" $component 1
-Set-Location $OriginalLocation
+Pop-Location
 Write-Output "The script completed successfully.  Review the log file for detailed results."
 
 #Mark the last time the script ran if not ran with WhatIf
