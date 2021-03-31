@@ -24,7 +24,8 @@ Written By: Bryan Dam
 Version 1.0: 7/31/18
 Version 2.4.6: 12/20/19
     Add 1903+ and Insider product categories.
-
+Version 2.5.0: 03/31/21
+    Add support for new version conventions (20H2, etc.)
 #>
 
 #Un-comment and add elements to this array for versions you no longer support.
@@ -32,22 +33,39 @@ Version 2.4.6: 12/20/19
 Function Invoke-SelectUpdatesPlugin{
 
     $DeclineUpdates = @{}
-    If (!$UnsupportedVersions){Return $DeclineUpdates}
+    If (!$UnsupportedVersions){
+        Return $DeclineUpdates
+    }
 
-    $Windows10Updates = ($ActiveUpdates | Where{((($_.ProductTitles.Contains('Windows 10') -or $_.ProductTitles.Contains('Windows 10, version 1903 and later') -or $_.ProductTitles.Contains('Windows Insider Pre-Release')) -and (! $_.ProductTitles.Contains('Windows 10 LTSB'))) -or ($_.Title -ilike "Windows 7 and 8.1 upgrade to Windows 10*"))})
-    
+    $Windows10Updates = ($ActiveUpdates | Where-Object{
+            (
+                (
+                    (
+                        $_.ProductTitles.Contains('Windows 10') -or
+                        $_.ProductTitles.Contains('Windows 10, version 1903 and later') -or
+                        $_.ProductTitles.Contains('Windows Insider Pre-Release')
+                    ) -and
+                    (! $_.ProductTitles.Contains('Windows 10 LTSB'))
+                ) -or
+                ($_.Title -ilike 'Windows 7 and 8.1 upgrade to Windows 10*')
+            )
+        })
+
     #Loop through the updates and decline any that match the version.
     ForEach ($Update in $Windows10Updates){
 
         #If the title contains a version number.
-        If ($Update.Title -match "Version \d\d\d\d" -and (! (Test-Exclusions $Update))){
-            
+        If (
+            ($Update.Title -match 'Version \d\d\d\d') -or ($Update.Title -match 'Version \d\d[Hh][1-2]') -and
+            (! (Test-Exclusions $Update))
+        ){
+
             #Capture the version number.
             $Version = $matches[0].Substring($matches[0].Length - 4)
-            
+
             #If the version number is in the list then decline it.
             If ($UnsupportedVersions.Contains($Version)){
-                $DeclineUpdates.Set_Item($Update.Id.UpdateId,"Windows 10 Version: $($Version)")
+                $DeclineUpdates.Set_Item($Update.Id.UpdateId, "Windows 10 Version: $($Version)")
             }
         }
     }
