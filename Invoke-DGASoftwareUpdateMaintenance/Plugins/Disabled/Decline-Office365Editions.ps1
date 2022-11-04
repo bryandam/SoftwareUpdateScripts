@@ -25,6 +25,7 @@ Written By: Bryan Dam
 Version 1.0: 10/28/17
 Version 2.0: 06/29/18 Fixed issue with selecting multiple editions.
 Version 3.0: 06/09/20 Make channels multi-line, add extra channels
+Version 4.0: 11/04/22 Update ProductTitles and KnownEditions to support Office 2021/2019 and name change
 #>
 #Un-comment and add elements to this array for editions you support.
 #Note: You must escape any parenthesis with the forward slash.  Ex.: "Office 365 Client Update - Monthly Channel \(Targeted\) Version"
@@ -38,25 +39,27 @@ $LatestVersionOnly = $False
 
 #If Microsoft decides to change their naming scheme you will need to update this variable to support the new scheme.
 $KnownEditions = @(
-    "Office 365 Client Update - First Release for Deferred Channel",
-    "Office 365 Client Update - First Release for Current Channel",
-    "Office 365 Client Update - Current Channel",
-    "Office 365 Client Update - Deferred Channel",
-    "Office 365 Client Update - Monthly Channel Version",
-    "Office 365 Client Update - Monthly Channel \(Targeted\) Version",
-    "Office 365 Client Update - Semi-annual Channel Version",
-    "Office 365 Client Update - Semi-annual Channel \(Targeted\) Version",
-    "Office 365 Client Update for Windows 7 - Version",
-    "Office 365 Client Update - Current Channel \(Preview\) Version",
-    "Office 365 Client Update - Monthly Enterprise Channel Version",
-    "Office 365 Client Update - Semi-Annual Enterprise Channel Version",
-    "Office 365 Client Update - Semi-Annual Enterprise Channel \(Preview\) Version",
-    "Microsoft 365 Apps Update - Current Channel \(Preview\) Version",
+    "Office 2019 Perpetual Enterprise Client Update Version Perpetual",
+    "Office LTSC 2021 Client Update Version Perpetual",
     "Microsoft 365 Apps Update - Current Channel Version",
+    "Microsoft 365 Apps Update - Current Channel \(Preview\) Version",
     "Microsoft 365 Apps Update - Monthly Enterprise Channel Version",
     "Microsoft 365 Apps Update - Semi-Annual Enterprise Channel Version",
     "Microsoft 365 Apps Update - Semi-Annual Enterprise Channel \(Preview\) Version",
-    "Microsoft 365 Apps Update for Windows 7 - Version"
+    "Microsoft 365 Apps Update for Windows 7 - Version",
+    "Office 365 Client Update for Windows 7 - Version",
+    "Office 365 Client Update - Current Channel \(Preview\) Version",
+    "Office 365 Client Update - Current Channel",
+    "Office 365 Client Update - Deferred Channel",
+    "Office 365 Client Update - First Release for Current Channel",
+    "Office 365 Client Update - First Release for Deferred Channel",
+    "Office 365 Client Update - Monthly Channel Version",
+    "Office 365 Client Update - Monthly Channel \(Targeted\) Version",
+    "Office 365 Client Update - Monthly Enterprise Channel Version",
+    "Office 365 Client Update - Semi-Annual Enterprise Channel Version",
+    "Office 365 Client Update - Semi-Annual Enterprise Channel \(Preview\) Version"    
+    "Office 365 Client Update - Semi-annual Channel Version",
+    "Office 365 Client Update - Semi-annual Channel \(Targeted\) Version"
 )
 Function Invoke-SelectUpdatesPlugin {
 
@@ -66,7 +69,7 @@ Function Invoke-SelectUpdatesPlugin {
         Return $DeclineUpdates
     }
     $maxVersions = @{}
-    $Office365Updates = ($ActiveUpdates | Where-Object {$_.ProductTitles.Contains('Office 365 Client')})
+    $Office365Updates = ($ActiveUpdates | Where-Object {$_.ProductTitles.Contains('Office 365 Client') -or $_.ProductTitles.Contains('Microsoft 365 Apps/Office 2019/Office LTSC')})
 
     #Loop through the updates and editions and determine the highest version number per edition.
     If ($LatestVersionOnly) {
