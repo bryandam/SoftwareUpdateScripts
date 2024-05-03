@@ -318,47 +318,12 @@ if ((Get-MgSubscribedSKU | Where-Object { $_.ServicePlans.ServicePlanName -eq "W
 else    
     {Write-Output "`nTenant: Not enrolled in Deployment Service "}
 
-
-#Confirm that Azure ObjectId is enrolled
-$uri = "https://graph.microsoft.com/beta/admin/windows/updates/updatableAssets/$aadObjectId"
-Write-Debug "Calling $uri"
-$response = Invoke-MgGraphRequest -Uri $uri
-
-if ($null -eq $response)
-    {Write-Output "ObjectId: Not enrolled in Deployment Service by Object Id."}
-else
-    {
-        Write-Output "ObjectId: Enrolled in Deployment Service by Object Id "
-
-        # List any enrollment errors.
-        $enrollmentErrors = $response.errors | ForEach-Object { $_.reason }
-        if ($enrollmentErrors.Count -eq 0) {
-            Write-Output "`tNo enrollment errors."
-        }    
-        else {
-            foreach ($enrollmentError in $enrollmentErrors){
-                Write-Output "`tEnrollment error: $enrollmentError"
-            }
-        }
-
-        # List the update categories the device is enrolled in
-        $updateCategories = $response.enrollments | ForEach-Object { $_.updateCategory }
-        if ($updateCategories.Count -eq 0) {
-            Write-Output "`tNot enrolled in any update categories."
-        }    
-        else {
-            foreach ($category in $updateCategories){
-                Write-Output "`tEnrollment for: $category"
-            }
-        }
-    }
-
 #Confirm that Device is enrolled
 $uri = "https://graph.microsoft.com/beta/admin/windows/updates/updatableAssets/$aadDeviceId"
 Write-Debug "Calling $uri"
-$response = Invoke-MgGraphRequest -Uri $uri
+$response = Invoke-MgGraphRequest -Uri $uri -SkipHttpErrorCheck
 
-if ($null -eq $response)
+if (($null -eq $response) -or ($response.error.code -eq 'NotFound'))
     {Write-Output "Device Id: Not enrolled in Deployment Service by Device Id. "}
 else
     {
@@ -505,16 +470,16 @@ Write-Debug "Calling $uri"
 $response = Invoke-MgGraphRequest -Uri $uri
 foreach ( $intuneFeatureUpdate in $response.value ){
        
-    #Add the Intune Update Rings if the device is targeted    
+    #Add the Intune Feature Update Policies if the device is targeted    
     Write-Verbose "Testing Feature Update Policy $($intuneFeatureUpdate.displayName)($($intuneFeatureUpdate.id))"
-    if (!$intuneFeatureUpdates.ContainsKey($intuneFeatureUpdate.Id) -and (Test-Assignment -Assignments $intuneFeatureUpdate.assignments -DeviceId $intuneDeviceId )){
-        $intuneUpdateRings.Add($intuneFeatureUpdate.Id, $intuneFeatureUpdate)            
+    if (!$intuneFeatureUpdates.ContainsKey($intuneFeatureUpdate.Id) -and (Test-Assignment -Assignments $intuneFeatureUpdate.assignments -DeviceId $intuneDeviceId)){
+        $intuneFeatureUpdates.Add($intuneFeatureUpdate.Id, $intuneFeatureUpdate)            
     }   
 }
 
 Write-Host "`nIntune Feature Update Policies"
 if ($intuneFeatureUpdates.Count -eq 0)
-    {Write-Host "`tNo WUfB feature update policies found."}
+    {Write-Host "`tNo Intune feature update policies found."}
 else{
     foreach ($intuneFeatureUpdate in $intuneFeatureUpdates.GetEnumerator())
         {
