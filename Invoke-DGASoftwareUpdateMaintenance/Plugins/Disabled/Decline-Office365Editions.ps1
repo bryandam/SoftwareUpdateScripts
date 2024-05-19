@@ -67,6 +67,7 @@ Function Invoke-SelectUpdatesPlugin {
     }
     $maxVersions = @{}
     $Office365Updates = ($ActiveUpdates | Where-Object {$_.ProductTitles.Contains('Office 365 Client')})
+    Add-TextToCMLog $LogFile "$($Office365Updates.count) Office 365 Client/Microsoft 365 Apps/Office 2019/Office LTSC discovered" $PluginName 1
 
     #Loop through the updates and editions and determine the highest version number per edition.
     If ($LatestVersionOnly) {
