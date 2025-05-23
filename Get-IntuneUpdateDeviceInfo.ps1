@@ -217,7 +217,7 @@ function Test-DeviceInAudience {
 }
 
 
-cls 
+Clear-Host
 $ProgressPreference = 'SilentlyContinue'
 
 # Install Microsoft.Graph PowerShell module if not already installed
@@ -226,7 +226,7 @@ if (-not (Get-Module -Name Microsoft.Graph -ListAvailable)) {
 }
 
 # Import the Microsoft.Graph module
-#Import-Module -Name Microsoft.Graph
+Import-Module Microsoft.Graph.Authentication, Microsoft.Graph.Identity.DirectoryManagement -Force
 
 # Connect to Graph is not already connected.
 if(-not (Get-MgContext -ErrorAction SilentlyContinue))
@@ -340,18 +340,17 @@ else
             }
         }
 
-        # List the update categories the device is enrolled in
-        $updateCategories = $response.enrollments | ForEach-Object { $_.updateCategory }
-        if ($updateCategories.Count -eq 0) {
+        # List the update categories the device is enrolled in        
+        if ($response.enrollment.Keys.Count -eq 0) {
             Write-Output "`tNot enrolled in any update categories."
         }    
         else {
-            foreach ($category in $updateCategories){
-                Write-Output "`tEnrollment for: $category"
+            Write-Output "`tEnrolled for:"
+            foreach ($key in $response.enrollment.Keys){
+                Write-Output "`t`t$key : $($response.enrollment[$key].enrollmentState) ($($($response.enrollment[$key].lastModifiedDateTime?.ToString("dddd, MMMM dd, yyyy"))))"
             }
         }
     }
-
 
 #Get the latest update installed on device.
 $uri = "https://graph.microsoft.com/beta/admin/windows/updates/catalog/entries?`$filter=microsoft.graph.windowsUpdates.qualityUpdateCatalogEntry/productRevisions/any(c:c/id eq '$osVersion')&`$expand=microsoft.graph.windowsUpdates.qualityUpdateCatalogEntry/productRevisions"
