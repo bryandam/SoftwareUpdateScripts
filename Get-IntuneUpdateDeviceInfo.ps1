@@ -653,59 +653,59 @@ foreach ( $wufbDsDriverPolicy in $response.value ){
         }
 
     # Make sure device is not in exclusion list
-    Write-Verbose "Processing Policy Audience Member Exclusion $($wufbDsDriverPolicy.audience.id)"
-    $foundExclusion = $false
-    $uri = "https://graph.microsoft.com/beta/admin//windows/updates/deploymentAudiences/$($wufbDsDriverPolicy.audience.id
-    )/exclusions"
-    $audienceMemberResponse = Invoke-MgGraphRequest -Uri $uri
-    foreach ($audienceMember in $audienceMemberResponse.value){
-        Write-Verbose "Processing Policy Audience Member Exclusion $($audienceMember.id)"
-        if ($audienceMember.'@odata.type' -eq '#microsoft.graph.windowsUpdates.updatableAssetGroup'){
-            Write-Verbose "Processing Policy Audience Member Exclusion Updatable Group $($audienceMember.id)"
-            $uri = "https://graph.microsoft.com/beta/admin/windows/updates/updatableAssets/$($audienceMember.id)/microsoft.graph.windowsUpdates.updatableAssetGroup/members"
-            Write-Debug "Calling $uri"
-            $groupMemberResponse = Invoke-MgGraphRequest -Uri $uri
-            foreach ($groupMember in $groupMemberResponse.value){
-                if (($groupMember.id -eq $aadObjectId) -or ($groupMember.id -eq $aadDeviceId)) {
-                    $foundExclusion = $true
-                    break   
+    if($wufbDsDriverPolicy.audience.id) {
+        Write-Verbose "Processing Policy Audience Member Exclusion $($wufbDsDriverPolicy.audience.id)"
+        $foundExclusion = $false
+        $uri = "https://graph.microsoft.com/beta/admin//windows/updates/deploymentAudiences/$($wufbDsDriverPolicy.audience.id)/exclusions"
+        $audienceMemberResponse = Invoke-MgGraphRequest -Uri $uri
+        foreach ($audienceMember in $audienceMemberResponse.value){
+            Write-Verbose "Processing Policy Audience Member Exclusion $($audienceMember.id)"
+            if ($audienceMember.'@odata.type' -eq '#microsoft.graph.windowsUpdates.updatableAssetGroup'){
+                Write-Verbose "Processing Policy Audience Member Exclusion Updatable Group $($audienceMember.id)"
+                $uri = "https://graph.microsoft.com/beta/admin/windows/updates/updatableAssets/$($audienceMember.id)/microsoft.graph.windowsUpdates.updatableAssetGroup/members"
+                Write-Debug "Calling $uri"
+                $groupMemberResponse = Invoke-MgGraphRequest -Uri $uri
+                foreach ($groupMember in $groupMemberResponse.value){
+                    if (($groupMember.id -eq $aadObjectId) -or ($groupMember.id -eq $aadDeviceId)) {
+                        $foundExclusion = $true
+                        break   
+                    }
                 }
             }
-        }
-        elseif (($audienceMember.id -eq $aadObjectId) -or ($audienceMember.id -eq $aadDeviceId)) {
-            $foundExclusion = $true
-            break
-        }
-    }
-    #If an exclusion was found, skip this record
-    if ($foundExclusion)    {
-        continue
-    }
-    
-    # See if device is in the deployment audience.
-    Write-Verbose "Processing Policy Audience Member Inclusion $($wufbDsDriverPolicy.audience.id)"
-    $foundInPolicy = $false
-    $uri = "https://graph.microsoft.com/beta/admin//windows/updates/deploymentAudiences/$($wufbDsDriverPolicy.audience.id
-    )/members"
-    Write-Debug "Calling $uri"
-    $audienceMemberResponse = Invoke-MgGraphRequest -Uri $uri
-    foreach ($audienceMember in $audienceMemberResponse.value){
-        Write-Verbose "Processing Policy Audience Member Inclusion $($audienceMember.id)"
-        if ($audienceMember.'@odata.type' -eq '#microsoft.graph.windowsUpdates.updatableAssetGroup'){
-            Write-Verbose "Processing Policy Audience Member  InclusionUpdatable Group $($audienceMember.id)"
-            $uri = "https://graph.microsoft.com/beta/admin/windows/updates/updatableAssets/$($audienceMember.id)/microsoft.graph.windowsUpdates.updatableAssetGroup/members"            
-            Write-Debug "Calling $uri"
-            $groupMemberResponse = Invoke-MgGraphRequest -Uri $uri
-            foreach ($groupMember in $groupMemberResponse.value){
-                if (($groupMember.id -eq $aadObjectId) -or ($groupMember.id -eq $aadDeviceId)) {
-                    $foundInPolicy = $true
-                    break   
-                }
+            elseif (($audienceMember.id -eq $aadObjectId) -or ($audienceMember.id -eq $aadDeviceId)) {
+                $foundExclusion = $true
+                break
             }
         }
-        elseif (($audienceMember.id -eq $aadObjectId) -or ($audienceMember.id -eq $aadDeviceId)) {
-            $foundInPolicy = $true
-            break
+        #If an exclusion was found, skip this record
+        if ($foundExclusion)    {
+            continue
+        }
+        
+        # See if device is in the deployment audience.
+        Write-Verbose "Processing Policy Audience Member Inclusion $($wufbDsDriverPolicy.audience.id)"
+        $foundInPolicy = $false
+        $uri = "https://graph.microsoft.com/beta/admin//windows/updates/deploymentAudiences/$($wufbDsDriverPolicy.audience.id)/members"
+        Write-Debug "Calling $uri"
+        $audienceMemberResponse = Invoke-MgGraphRequest -Uri $uri
+        foreach ($audienceMember in $audienceMemberResponse.value){
+            Write-Verbose "Processing Policy Audience Member Inclusion $($audienceMember.id)"
+            if ($audienceMember.'@odata.type' -eq '#microsoft.graph.windowsUpdates.updatableAssetGroup'){
+                Write-Verbose "Processing Policy Audience Member  InclusionUpdatable Group $($audienceMember.id)"
+                $uri = "https://graph.microsoft.com/beta/admin/windows/updates/updatableAssets/$($audienceMember.id)/microsoft.graph.windowsUpdates.updatableAssetGroup/members"            
+                Write-Debug "Calling $uri"
+                $groupMemberResponse = Invoke-MgGraphRequest -Uri $uri
+                foreach ($groupMember in $groupMemberResponse.value){
+                    if (($groupMember.id -eq $aadObjectId) -or ($groupMember.id -eq $aadDeviceId)) {
+                        $foundInPolicy = $true
+                        break   
+                    }
+                }
+            }
+            elseif (($audienceMember.id -eq $aadObjectId) -or ($audienceMember.id -eq $aadDeviceId)) {
+                $foundInPolicy = $true
+                break
+            }
         }
     }
 
