@@ -138,6 +138,8 @@ Version 2.5.0 09/17/20
     Fixed the fix for looking up ConfigMgr supersedence settings.
 Version 2.5.1 09/19/20
     Fixed the fix for the fix for looking up ConfigMgr supersedence settings.
+Version 2.5.2 11/04/22
+    If in WhatIf mode, make $AllUpdates a global variable so it can be used after the script exits.
 
 .LINK
 http://www.damgoodadmin.com
@@ -1517,6 +1519,7 @@ If ($DeleteDeclined -or $DeclineSuperseded -or $DeclineByTitle -or $DeclineByPlu
     #Get a collection of all updates.
     Add-TextToCMLog $LogFile "Retrieving all updates." $component 1
     Try {
+            If ($WhatIfPreference){ $Global:AllUpdates = $null } #if in WhatIf mode, make $AllUpdates a global variable so it can be used after the script exits
 	    $AllUpdates = $WSUSServer.GetUpdates()
     } Catch {
 	    Add-TextToCMLog $LogFile "Failed to get updates." $component 3
