@@ -347,7 +347,13 @@ else
         else {
             Write-Output "`tEnrolled for:"
             foreach ($key in $response.enrollment.Keys){
-                Write-Output "`t`t$key : $($response.enrollment[$key].enrollmentState) ($($($response.enrollment[$key].lastModifiedDateTime?.ToString("dddd, MMMM dd, yyyy"))))"
+                $lastModified = if ($response.enrollment[$key].lastModifiedDateTime) {
+		            $response.enrollment[$key].lastModifiedDateTime.ToString("dddd, MMMM dd, yyyy")
+		        } else {
+		            "N/A"
+		        }
+                
+                Write-Output "`t`t$key : $($response.enrollment[$key].enrollmentState) ($lastModified)"
             }
         }
     }
